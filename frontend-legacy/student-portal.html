@@ -198,7 +198,13 @@
 
         attendanceRecords = Array.isArray(data.records) ? data.records : [];
         renderHistory();
-        updateTodayStatus();
+        if (data.today) {
+          const statusText = data.today.status === 'ontime' ? 'ON TIME' : (data.today.status === 'late' ? 'LATE' : (data.today.status === 'absent' ? 'ABSENT' : 'PENDING CHECK-IN'));
+          document.getElementById('todayStatus').textContent = statusText + (data.today.record?.time_in ? ' at ' + data.today.record.time_in : '');
+          document.getElementById('todayStatus').style.color = data.today.status === 'ontime' ? '#1b5e20' : (data.today.status === 'late' ? '#b45309' : (data.today.status === 'absent' ? '#b71c1c' : '#0284c7'));
+        } else {
+          updateTodayStatus();
+        }
       } catch (error) {
         document.getElementById('studentName').textContent = 'Profile could not be loaded';
         notice.textContent = 'Could not connect to the student account service. Refresh and try again.';

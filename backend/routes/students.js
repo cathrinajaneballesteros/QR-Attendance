@@ -1,6 +1,14 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const auth = require('../middleware/auth');
+const { parseLearnersFromExcel } = require('../services/excelLearnerParser');
+const { logActivity } = require('../services/activityLogger');
+
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 15 * 1024 * 1024 } // 15MB max
+});
 
 function staff(req, res, next) {
     if (!['admin', 'teacher'].includes(req.user.role)) {
@@ -11,33 +19,65 @@ function staff(req, res, next) {
     next();
 }
 
-/*
- * Add these columns to older SQLite databases the first time
- * the students API is used.
- */
-function ensureStudentColumns(db) {
-    const columns = db.prepare('PRAGMA table_info(students)').all()
-        .map(function (column) {
-            return column.name;
-        });
+async function ensureStudentColumns(db) {
+    if (db.isPostgres) return; // PostgreSQL schema handled via migrations
+    try {
+        const columns = (await db.prepare('PRAGMA table_info(students)').all() || [])
+            .map(function (column) {
+                return column.name;
+            });
 
-    if (!columns.includes('student_phone')) {
-        db.exec('ALTER TABLE students ADD COLUMN student_phone TEXT');
-    }
+        if (!columns.includes('student_phone')) {
+            await db.exec('ALTER TABLE students ADD COLUMN student_phone TEXT');
+        }
+        if (!columns.includes('email')) {
+            await db.exec('ALTER TABLE students ADD COLUMN email TEXT');
+        }
+        if (!columns.includes('is_enrolled')) {
+            await db.exec('ALTER TABLE students ADD COLUMN is_enrolled INTEGER DEFAULT 1');
+        }
+        if (!columns.includes('enrollment_status')) {
+            await db.exec("ALTER TABLE students ADD COLUMN enrollment_status TEXT DEFAULT 'officially_enrolled'");
+        }
+        if (!columns.includes('teacher_id')) {
+            await db.exec('ALTER TABLE students ADD COLUMN teacher_id INTEGER');
+        }
 
-    if (!columns.includes('email')) {
-        db.exec('ALTER TABLE students ADD COLUMN email TEXT');
-    }
+        await db.exec("UPDATE students SET is_enrolled = 1 WHERE is_enrolled IS NULL OR is_enrolled = ''");
+        await db.exec("UPDATE students SET enrollment_status = 'officially_enrolled' WHERE enrollment_status IS NULL OR enrollment_status = ''");
+        await db.exec("UPDATE students SET teacher_id = (SELECT id FROM users WHERE role = 'teacher' ORDER BY id LIMIT 1) WHERE teacher_id IS NULL OR teacher_id = 0");
+    } catch (e) {}
 }
 
-router.get('/', auth, staff, function (req, res) {
+// Get students: Each teacher sees their OWN students; Admin can view all or filter by teacher_id
+router.get('/', auth, staff, async function (req, res) {
     try {
         const db = req.app.get('db');
-        ensureStudentColumns(db);
+        await ensureStudentColumns(db);
 
-        const students = db.prepare(
-            'SELECT * FROM students ORDER BY sex, full_name'
-        ).all();
+        let query = 'SELECT * FROM students';
+        const params = [];
+
+        if (req.user.role === 'teacher') {
+            query += ' WHERE teacher_id = ?';
+            params.push(req.user.id);
+        } else if (req.query.teacher_id) {
+            query += ' WHERE teacher_id = ?';
+            params.push(req.query.teacher_id);
+        }
+
+        query += ' ORDER BY sex, full_name';
+
+        const rows = await db.prepare(query).all(...params);
+
+        const students = (rows || []).map(s => {
+            const isBlocked = s.is_enrolled === 0 || s.is_enrolled === '0' || s.enrollment_status === 'not_enrolled' || s.enrollment_status === 'dropped';
+            return {
+                ...s,
+                is_enrolled: isBlocked ? 0 : 1,
+                enrollment_status: isBlocked ? (s.enrollment_status || 'not_enrolled') : 'officially_enrolled'
+            };
+        });
 
         res.json(students);
     } catch (error) {
@@ -46,38 +86,53 @@ router.get('/', auth, staff, function (req, res) {
     }
 });
 
-router.get('/:id', auth, staff, function (req, res) {
+router.get('/:id', auth, staff, async function (req, res) {
     try {
         const db = req.app.get('db');
-        ensureStudentColumns(db);
+        await ensureStudentColumns(db);
 
-        const student = db.prepare(
-            'SELECT * FROM students WHERE id = ?'
-        ).get(req.params.id);
+        let query = 'SELECT * FROM students WHERE id = ?';
+        const params = [req.params.id];
 
-        if (!student) {
-            return res.status(404).json({ error: 'Student not found' });
+        if (req.user.role === 'teacher') {
+            query += ' AND teacher_id = ?';
+            params.push(req.user.id);
         }
 
-        res.json(student);
+        const student = await db.prepare(query).get(...params);
+
+        if (!student) {
+            return res.status(404).json({ error: 'Student not found in your class roster' });
+        }
+
+        const isBlocked = student.is_enrolled === 0 || student.is_enrolled === '0' || student.enrollment_status === 'not_enrolled' || student.enrollment_status === 'dropped';
+        res.json({
+            ...student,
+            is_enrolled: isBlocked ? 0 : 1,
+            enrollment_status: isBlocked ? (student.enrollment_status || 'not_enrolled') : 'officially_enrolled'
+        });
     } catch (error) {
         console.error('Get student error:', error.message);
         res.status(500).json({ error: 'Could not load student' });
     }
 });
 
-router.post('/', auth, staff, function (req, res) {
+// Add single student: automatically binds to teacher_id
+router.post('/', auth, staff, async function (req, res) {
     try {
         const db = req.app.get('db');
-        ensureStudentColumns(db);
+        await ensureStudentColumns(db);
 
         const fullName = String(req.body.full_name || '').trim();
-        const sex = String(req.body.sex || '').trim();
+        const sex = String(req.body.sex || 'M').trim().toUpperCase() === 'F' ? 'F' : 'M';
         const lrn = String(req.body.lrn || '').trim();
         const guardianName = String(req.body.guardian_name || '').trim();
         const guardianContact = String(req.body.guardian_contact || '').trim();
         const studentPhone = String(req.body.student_phone || '').trim();
         const email = String(req.body.email || '').trim();
+        const isEnrolled = req.body.is_enrolled !== undefined ? (req.body.is_enrolled ? 1 : 0) : 1;
+        const enrollmentStatus = String(req.body.enrollment_status || (isEnrolled ? 'officially_enrolled' : 'not_enrolled')).trim();
+        const teacherId = req.user.role === 'teacher' ? req.user.id : (req.body.teacher_id || null);
 
         if (!fullName) {
             return res.status(400).json({
@@ -87,14 +142,15 @@ router.post('/', auth, staff, function (req, res) {
 
         const qrCode =
             'QR-' +
+            (teacherId ? teacherId + '-' : '') +
             fullName.replace(/[^A-Z]/gi, '').substring(0, 10).toUpperCase() +
             '-' +
             Date.now();
 
-        const result = db.prepare(
+        const result = await db.prepare(
             'INSERT INTO students ' +
-            '(full_name, sex, lrn, guardian_name, guardian_contact, student_phone, email, qr_code) ' +
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            '(full_name, sex, lrn, guardian_name, guardian_contact, student_phone, email, is_enrolled, enrollment_status, qr_code, teacher_id) ' +
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         ).run(
             fullName,
             sex,
@@ -103,11 +159,14 @@ router.post('/', auth, staff, function (req, res) {
             guardianContact,
             studentPhone,
             email,
-            qrCode
+            isEnrolled,
+            enrollmentStatus,
+            qrCode,
+            teacherId
         );
 
         res.status(201).json({
-            message: 'Student added',
+            message: 'Student added to your roster',
             id: result.lastInsertRowid,
             qr_code: qrCode
         });
@@ -117,10 +176,223 @@ router.post('/', auth, staff, function (req, res) {
     }
 });
 
-router.put('/:id', auth, staff, function (req, res) {
+// Import learners from Excel (.xls / .xlsx - specifically designed for SF2 template on MARCH)
+router.post('/import-excel', auth, staff, upload.single('file'), async function (req, res) {
     try {
         const db = req.app.get('db');
-        ensureStudentColumns(db);
+        await ensureStudentColumns(db);
+
+        let fileBuffer = null;
+        if (req.file && req.file.buffer) {
+            fileBuffer = req.file.buffer;
+        } else if (req.body.fileData) {
+            fileBuffer = Buffer.from(req.body.fileData, 'base64');
+        }
+
+        if (!fileBuffer) {
+            return res.status(400).json({ error: 'Please upload an Excel file (.xls or .xlsx)' });
+        }
+
+        const sheetName = req.body.sheetName || req.body.sheet_name || null;
+        const replaceExisting = String(req.body.replaceExisting) === 'true' || req.body.replaceExisting === true;
+        const isPreview = String(req.query.preview) === 'true' || req.body.preview === true;
+
+        // Parse using DepEd SF2 March template extractor
+        const parsed = parseLearnersFromExcel(fileBuffer, { sheetName });
+
+        if (!parsed.learners || !parsed.learners.length) {
+            return res.status(400).json({
+                error: `No learners found in sheet "${parsed.sheetName}". Please ensure learners are listed under the NAME column.`
+            });
+        }
+
+        // If preview only, return extracted learners without saving
+        if (isPreview) {
+            return res.json({
+                preview: true,
+                sheetName: parsed.sheetName,
+                availableSheets: parsed.availableSheets,
+                totalCount: parsed.totalCount,
+                maleCount: parsed.maleCount,
+                femaleCount: parsed.femaleCount,
+                learners: parsed.learners
+            });
+        }
+
+        const teacherId = req.user.role === 'teacher' ? req.user.id : (req.body.teacher_id || null);
+
+        // If replace existing, only remove this teacher's own students
+        if (replaceExisting) {
+            if (teacherId) {
+                await db.prepare('DELETE FROM students WHERE teacher_id = ?').run(teacherId);
+            } else {
+                await db.prepare('DELETE FROM students WHERE teacher_id IS NULL').run();
+            }
+        }
+
+        const insertStmt = db.prepare(
+            'INSERT INTO students (full_name, sex, lrn, is_enrolled, enrollment_status, qr_code, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        );
+
+        let insertedCount = 0;
+        const insertedList = [];
+        const timestamp = Date.now().toString().slice(-4);
+
+        for (let i = 0; i < parsed.learners.length; i++) {
+            const item = parsed.learners[i];
+            const cleanName = String(item.full_name || '').trim();
+            if (!cleanName) continue;
+
+            const sex = item.sex === 'F' ? 'F' : 'M';
+            const qr = 'QR-' + 
+                       (teacherId ? teacherId + '-' : '') +
+                       cleanName.replace(/[^A-Z]/gi, '').substring(0, 10).toUpperCase() + '-' +
+                       sex + (i + 1) + '-' + timestamp + '-' + (i + 1);
+
+            const result = await insertStmt.run(
+                cleanName,
+                sex,
+                '', // LRN is empty initially, to be filled as needed
+                1,  // Officially enrolled
+                'officially_enrolled',
+                qr,
+                teacherId
+            );
+
+            insertedCount++;
+            insertedList.push({
+                id: result.lastInsertRowid,
+                full_name: cleanName,
+                sex,
+                qr_code: qr
+            });
+        }
+
+        // Log this action
+        try {
+            await logActivity(db, {
+                role: req.user.role,
+                userName: req.user.username,
+                actionType: 'student_update',
+                actionTitle: `Imported ${insertedCount} Learners from Excel (${parsed.sheetName})`,
+                details: `Extracted ${parsed.maleCount} Male and ${parsed.femaleCount} Female learners into class roster from sheet "${parsed.sheetName}".`,
+                targetName: `Roster (${parsed.sheetName})`
+            });
+        } catch (logErr) {}
+
+        res.json({
+            success: true,
+            message: `Successfully imported ${insertedCount} learners (${parsed.maleCount} Male, ${parsed.femaleCount} Female) from sheet "${parsed.sheetName}"!`,
+            count: insertedCount,
+            maleCount: parsed.maleCount,
+            femaleCount: parsed.femaleCount,
+            sheetName: parsed.sheetName,
+            students: insertedList
+        });
+    } catch (error) {
+        console.error('Import excel error:', error.message);
+        res.status(500).json({ error: 'Failed to import learners from Excel: ' + error.message });
+    }
+});
+
+// Batch setup roster for teacher
+router.post('/batch-setup', auth, staff, async function (req, res) {
+    try {
+        const db = req.app.get('db');
+        await ensureStudentColumns(db);
+
+        const list = Array.isArray(req.body.students) ? req.body.students : [];
+        const clearExisting = !!req.body.clearExisting;
+        const teacherId = req.user.role === 'teacher' ? req.user.id : (req.body.teacher_id || null);
+
+        if (!list.length) {
+            return res.status(400).json({ error: 'Please provide at least one student name.' });
+        }
+
+        // Only clear THIS teacher's roster, preserving other teachers' students
+        if (clearExisting) {
+            if (teacherId) {
+                await db.prepare('DELETE FROM students WHERE teacher_id = ?').run(teacherId);
+            } else {
+                await db.prepare('DELETE FROM students WHERE teacher_id IS NULL').run();
+            }
+        }
+
+        let insertedCount = 0;
+        const insertStmt = db.prepare(
+            'INSERT INTO students (full_name, sex, lrn, is_enrolled, enrollment_status, qr_code, teacher_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        );
+
+        for (let index = 0; index < list.length; index++) {
+            const item = list[index];
+            const name = String(item.full_name || item.name || '').trim();
+            if (!name) continue;
+
+            const sex = String(item.sex || 'M').trim().toUpperCase() === 'F' ? 'F' : 'M';
+            const lrn = String(item.lrn || '').trim();
+            const isEnrolled = item.is_enrolled !== undefined ? (item.is_enrolled ? 1 : 0) : 1;
+            const enrollmentStatus = String(item.enrollment_status || 'officially_enrolled').trim();
+            const qr = 'QR-' + (teacherId ? teacherId + '-' : '') + name.replace(/[^A-Z]/gi, '').substring(0, 10).toUpperCase() + '-' + sex + (index + 1) + '-' + Math.floor(1000 + Math.random() * 9000);
+
+            await insertStmt.run(name, sex, lrn, isEnrolled, enrollmentStatus, qr, teacherId);
+            insertedCount++;
+        }
+
+        res.json({
+            message: `Successfully set up class roster with ${insertedCount} students!`,
+            count: insertedCount
+        });
+    } catch (error) {
+        console.error('Batch setup error:', error.message);
+        res.status(500).json({ error: 'Could not set up student roster: ' + error.message });
+    }
+});
+
+// Quick toggle enrollment status
+router.patch('/:id/enrollment', auth, staff, async function (req, res) {
+    try {
+        const db = req.app.get('db');
+        await ensureStudentColumns(db);
+
+        const student = await db.prepare('SELECT * FROM students WHERE id = ?').get(req.params.id);
+        if (!student) {
+            return res.status(404).json({ error: 'Student not found' });
+        }
+
+        if (req.user.role === 'teacher' && student.teacher_id && student.teacher_id !== req.user.id) {
+            return res.status(403).json({ error: 'Unauthorized to modify another teacher\'s student' });
+        }
+
+        const isEnrolled = req.body.is_enrolled !== undefined ? (req.body.is_enrolled ? 1 : 0) : (student.is_enrolled ? 0 : 1);
+        const enrollmentStatus = isEnrolled ? 'officially_enrolled' : 'not_enrolled';
+
+        await db.prepare('UPDATE students SET is_enrolled = ?, enrollment_status = ? WHERE id = ?')
+            .run(isEnrolled, enrollmentStatus, req.params.id);
+
+        res.json({
+            message: `Student enrollment updated to: ${isEnrolled ? 'Officially Enrolled' : 'Not Officially Enrolled'}`,
+            is_enrolled: isEnrolled,
+            enrollment_status: enrollmentStatus
+        });
+    } catch (error) {
+        console.error('Update enrollment error:', error.message);
+        res.status(500).json({ error: 'Could not update enrollment' });
+    }
+});
+
+router.put('/:id', auth, staff, async function (req, res) {
+    try {
+        const db = req.app.get('db');
+        await ensureStudentColumns(db);
+
+        const student = await db.prepare('SELECT * FROM students WHERE id = ?').get(req.params.id);
+        if (!student) {
+            return res.status(404).json({ error: 'Student not found' });
+        }
+
+        if (req.user.role === 'teacher' && student.teacher_id && student.teacher_id !== req.user.id) {
+            return res.status(403).json({ error: 'Unauthorized to modify another teacher\'s student' });
+        }
 
         const fullName = String(req.body.full_name || '').trim();
         if (!fullName) {
@@ -129,19 +401,25 @@ router.put('/:id', auth, staff, function (req, res) {
             });
         }
 
-        db.prepare(
+        const isEnrolled = req.body.is_enrolled !== undefined ? (req.body.is_enrolled ? 1 : 0) : 1;
+        const enrollmentStatus = String(req.body.enrollment_status || (isEnrolled ? 'officially_enrolled' : 'not_enrolled')).trim();
+
+        await db.prepare(
             'UPDATE students SET ' +
             'full_name = ?, sex = ?, lrn = ?, guardian_name = ?, ' +
-            'guardian_contact = ?, student_phone = ?, email = ? ' +
+            'guardian_contact = ?, student_phone = ?, email = ?, ' +
+            'is_enrolled = ?, enrollment_status = ? ' +
             'WHERE id = ?'
         ).run(
             fullName,
-            String(req.body.sex || '').trim(),
+            String(req.body.sex || 'M').trim().toUpperCase() === 'F' ? 'F' : 'M',
             String(req.body.lrn || '').trim(),
             String(req.body.guardian_name || '').trim(),
             String(req.body.guardian_contact || '').trim(),
             String(req.body.student_phone || '').trim(),
             String(req.body.email || '').trim(),
+            isEnrolled,
+            enrollmentStatus,
             req.params.id
         );
 
@@ -152,11 +430,20 @@ router.put('/:id', auth, staff, function (req, res) {
     }
 });
 
-router.delete('/:id', auth, staff, function (req, res) {
+router.delete('/:id', auth, staff, async function (req, res) {
     try {
         const db = req.app.get('db');
 
-        db.prepare('DELETE FROM students WHERE id = ?')
+        const student = await db.prepare('SELECT * FROM students WHERE id = ?').get(req.params.id);
+        if (!student) {
+            return res.status(404).json({ error: 'Student not found' });
+        }
+
+        if (req.user.role === 'teacher' && student.teacher_id && student.teacher_id !== req.user.id) {
+            return res.status(403).json({ error: 'Unauthorized to delete another teacher\'s student' });
+        }
+
+        await db.prepare('DELETE FROM students WHERE id = ?')
             .run(req.params.id);
 
         res.json({ message: 'Student deleted' });

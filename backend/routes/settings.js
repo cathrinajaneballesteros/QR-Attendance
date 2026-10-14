@@ -5,6 +5,10 @@ const auth = require('../middleware/auth');
 const defaults = {
     gps_enabled: '0',
     attendance_mode: 'onsite',
+    room_name: 'Room 101 - Grade 6 Great Geniuses',
+    qr_code_type: 'fixed',
+    attendance_theme: 'rose',
+    block_unenrolled: '1',
     school_latitude: '',
     school_longitude: '',
     geofence_radius_m: '100',
@@ -18,42 +22,69 @@ const defaults = {
     sms_enabled: '0'
 };
 
-function getSettings(db) {
-    const rows = db.prepare(
+async function getSettings(db) {
+    const rows = await db.prepare(
         'SELECT setting_key, setting_value FROM app_settings'
     ).all();
 
     const stored = {};
-    rows.forEach(function (row) {
+    (rows || []).forEach(function (row) {
         stored[row.setting_key] = row.setting_value;
     });
 
     return Object.assign({}, defaults, stored);
 }
 
-router.get('/', auth, function (req, res) {
-    res.json(getSettings(req.app.get('db')));
+router.get('/', auth, async function (req, res) {
+    try {
+        const settings = await getSettings(req.app.get('db'));
+        res.json(settings);
+    } catch (err) {
+        console.error('Get settings error:', err.message);
+        res.status(500).json({ error: 'Failed to retrieve settings' });
+    }
 });
 
-router.put('/', auth, function (req, res) {
-    if (req.user.role !== 'teacher') {
-        return res.status(403).json({ error: 'Teacher account required' });
+router.put('/', auth, async function (req, res) {
+    try {
+        if (!['admin', 'teacher'].includes(req.user.role)) {
+            return res.status(403).json({ error: 'Teacher or admin account required' });
+        }
+
+        const db = req.app.get('db');
+
+        for (const key of Object.keys(defaults)) {
+            if (req.body[key] !== undefined) {
+                await db.prepare(
+                    'INSERT INTO app_settings (setting_key, setting_value) ' +
+                    'VALUES (?, ?) ' +
+                    'ON CONFLICT(setting_key) DO UPDATE SET ' +
+                    'setting_value = excluded.setting_value'
+                ).run(key, String(req.body[key]));
+            }
+        }
+
+        const updated = await getSettings(db);
+
+        try {
+            const { logActivity } = require('../services/activityLogger');
+            const role = req.user?.role || 'admin';
+            await logActivity(db, {
+                role: role,
+                userName: req.user?.username || (role === 'admin' ? 'admin' : 'teacher'),
+                actionType: 'settings_update',
+                actionTitle: 'System Settings Updated',
+                details: 'Modified system configuration, attendance rules, or room settings.',
+                targetName: 'App Settings'
+            });
+        } catch (logErr) {}
+
+        res.json(updated);
+    } catch (err) {
+        console.error('Update settings error:', err.message);
+        res.status(500).json({ error: 'Failed to update settings' });
     }
 
-    const db = req.app.get('db');
-
-    Object.keys(defaults).forEach(function (key) {
-        if (req.body[key] !== undefined) {
-            db.prepare(
-                'INSERT INTO app_settings (setting_key, setting_value) ' +
-                'VALUES (?, ?) ' +
-                'ON CONFLICT(setting_key) DO UPDATE SET ' +
-                'setting_value = excluded.setting_value'
-            ).run(key, String(req.body[key]));
-        }
-    });
-
-    res.json(getSettings(db));
 });
 
 module.exports = router;

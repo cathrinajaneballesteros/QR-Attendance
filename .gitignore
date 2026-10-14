@@ -1,5 +1,24 @@
-﻿
+# Dependencies
 node_modules/
-attendance.db
-.env
+backend/node_modules/
+frontend/node_modules/
 
+# Local databases
+attendance.db
+backend/attendance.db
+
+# Secrets
+.env
+backend/.env
+frontend/.env
+*.env.local
+
+# Build outputs
+dist/
+frontend/dist/
+.vercel
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
