@@ -7,7 +7,7 @@ let dbInstance = null;
 // ====================================================================
 // SQLITE IMPLEMENTATION (Local development / Offline fallback)
 // ====================================================================
-const initSqlJs = require('sql.js');
+let initSqlJs = null;
 const dbPath = path.join(__dirname, '..', 'attendance.db');
 
 function saveSqliteDB(db) {
@@ -101,7 +101,27 @@ function wrapSqliteDatabase(sqlDb) {
 }
 
 async function initSqliteDatabase() {
-  const SQL = await initSqlJs();
+  if (!initSqlJs) {
+    try {
+      initSqlJs = require('sql.js');
+    } catch (err) {
+      throw new Error(
+        'SQLite (sql.js) is not available in this environment. ' +
+        'Please define DATABASE_URL in your Vercel project environment variables to connect to Supabase/PostgreSQL.'
+      );
+    }
+  }
+
+  let SQL;
+  try {
+    SQL = await initSqlJs();
+  } catch (err) {
+    throw new Error(
+      'Failed to initialize SQLite WebAssembly: ' + err.message + '. ' +
+      'On Vercel, please set the DATABASE_URL environment variable to your Supabase PostgreSQL connection string.'
+    );
+  }
+
   let sqlDb;
 
   if (fs.existsSync(dbPath)) {
