@@ -17,8 +17,11 @@ CREATE TABLE IF NOT EXISTS users (
   student_id INTEGER,
   password TEXT NOT NULL,
   role TEXT DEFAULT 'teacher',
+  face_descriptor TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS face_descriptor TEXT;
 
 -- 2. STUDENTS TABLE (Grade 6 Great Geniuses Roster)
 CREATE TABLE IF NOT EXISTS students (
@@ -152,6 +155,7 @@ INSERT INTO students (full_name, sex, qr_code, is_enrolled, enrollment_status) V
   ('PACHOCA, JOHN ROBERT DELA CRUZ', 'M', 'QR-PACHOCAJOHNR-M10', 1, 'officially_enrolled'),
   ('PULANCO, JERALD GULOY', 'M', 'QR-PULANCOJERAL-M11', 1, 'officially_enrolled'),
   ('SORIANO, MARK ANGELO GAYAP', 'M', 'QR-SORIANOMARKA-M12', 1, 'officially_enrolled'),
+  ('JASTEN C CABATO', 'M', 'QR-JASTENCCAB-M13', 1, 'officially_enrolled'),
   -- Female Students
   ('AGOTO, MILAGROS RINGOR', 'F', 'QR-AGOTOMILAGRO-F1', 1, 'officially_enrolled'),
   ('ANCHETA, KRISTINE HALOG', 'F', 'QR-ANCHETAKRIST-F2', 1, 'officially_enrolled'),
@@ -167,6 +171,9 @@ INSERT INTO students (full_name, sex, qr_code, is_enrolled, enrollment_status) V
   ('VILLANUEVA, KIESHA FAITH PULANCO', 'F', 'QR-VILLANUEVAKI-F12', 1, 'officially_enrolled'),
   ('VILORIA, JHAIREEN ANTHONET DELA CRUZ', 'F', 'QR-VILORIAJHAIR-F13', 1, 'officially_enrolled')
 ON CONFLICT (qr_code) DO NOTHING;
+
+-- Assign teacher_id to class roster
+UPDATE students SET teacher_id = (SELECT id FROM users WHERE role = 'teacher' ORDER BY id LIMIT 1) WHERE teacher_id IS NULL;
 
 -- Link default student account to the first student (ANIN, ANGELITO LAPITAN)
 DO $$

@@ -1,6 +1,6 @@
 import React from 'react';
-import LoginPortal from '../components/LoginPortal';
+import { Navigate } from 'react-router-dom';
 
 export default function Login() {
-  return <LoginPortal initialRole="teacher" />;
+  return <Navigate to="/login/teacher" replace />;
 }

@@ -37,10 +37,17 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    const role = user?.role;
     localStorage.clear();
     setToken(null);
     setUser(null);
-    window.location.href = '/login';
+    if (role === 'admin') {
+      window.location.href = '/login/admin';
+    } else if (role === 'student') {
+      window.location.href = '/login/student';
+    } else {
+      window.location.href = '/login/teacher';
+    }
   };
 
   return (

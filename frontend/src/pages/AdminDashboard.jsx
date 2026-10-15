@@ -163,11 +163,12 @@ export default function AdminDashboard() {
       <div className="card" style={{ background: 'var(--surface-gradient)', border: '1px solid var(--primary-border)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--primary)' }}>
-              School Administration Portal 🛡️
+            <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ShieldAlert size={20} />
+              <span>School Administration Console</span>
             </h2>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-              Sta. Rosa Elementary School • System Monitoring & DepEd SF2 Compliance
+              Sta. Rosa Elementary School • System Monitoring &amp; DepEd SF2 Compliance
             </p>
           </div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>

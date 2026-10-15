@@ -38,7 +38,13 @@ export default function Navbar() {
             </div>
             <div className="brand-info">
               <h1>QR<span className="highlight">Attend</span></h1>
-              <p>Sta. Rosa ES • Grade 6 Great Geniuses</p>
+              <p>
+                {isAdmin
+                  ? 'Sta. Rosa ES • Administration Console'
+                  : isStudent
+                    ? 'Sta. Rosa ES • Learner Portal'
+                    : 'Sta. Rosa ES • Faculty Portal'}
+              </p>
             </div>
           </Link>
 

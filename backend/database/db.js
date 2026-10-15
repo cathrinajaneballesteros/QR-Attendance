@@ -224,6 +224,7 @@ async function initSqliteDatabase() {
 
   ensureColumn('users', 'email', 'TEXT');
   ensureColumn('users', 'student_id', 'INTEGER');
+  ensureColumn('users', 'face_descriptor', 'TEXT');
   ensureColumn('students', 'student_phone', 'TEXT');
   ensureColumn('students', 'email', 'TEXT');
   ensureColumn('students', 'is_enrolled', 'INTEGER DEFAULT 1');
@@ -310,8 +311,47 @@ async function initSqliteDatabase() {
     seedSqliteSampleActivityLogs(sqlDb);
   }
 
+  // Clean up any zero-attendance duplicate students and orphaned accounts
+  cleanupDuplicateStudents(sqlDb);
+
   saveSqliteDB(sqlDb);
   return wrapSqliteDatabase(sqlDb);
+}
+
+function cleanupDuplicateStudents(sqlDb) {
+  try {
+    // 1. Purge test/junk faculty and admin accounts created during local tests
+    sqlDb.run("DELETE FROM users WHERE username IN ('test1', '1234354', 'DI MATIBAG') OR username LIKE 'test.teacher.%' OR username LIKE 'office_admin_%'");
+    
+    // 2. Remove test student 'LUICHE' and associated user
+    sqlDb.run("DELETE FROM users WHERE username = 'Luiche' OR student_id = 53");
+    sqlDb.run("DELETE FROM students WHERE id = 53");
+
+    // 3. Link orphaned student_id = 13 attendance to student 40 if needed
+    sqlDb.run('UPDATE attendance SET student_id = 40 WHERE student_id = 13 AND (SELECT COUNT(*) FROM students WHERE id = 13) = 0 AND (SELECT COUNT(*) FROM students WHERE id = 40) > 0');
+    
+    // 4. Clean student account usernames
+    sqlDb.run("UPDATE users SET student_id = 14, username = 'AnchetaKristine', email = 'AnchetaKristine' WHERE username = 'AnchetaKristine2'");
+    sqlDb.run("UPDATE users SET username = 'AgotoMilagros', email = 'AgotoMilagros' WHERE username = 'AgotoMilagros2' AND (SELECT COUNT(*) FROM users WHERE username = 'AgotoMilagros') = 0");
+    sqlDb.run("UPDATE users SET full_name = 'School Administrator' WHERE username = 'admin'");
+
+    // 5. Find duplicate students where full_name matches an earlier student ID with attendance, but this duplicate has 0 attendance
+    const dups = sqlDb.exec(`
+      SELECT s2.id 
+      FROM students s1 
+      JOIN students s2 ON LOWER(TRIM(s1.full_name)) = LOWER(TRIM(s2.full_name)) AND s1.id < s2.id
+      WHERE (SELECT COUNT(*) FROM attendance WHERE student_id = s2.id) = 0
+    `);
+    if (dups.length && dups[0].values.length) {
+      const dupIds = dups[0].values.map(r => r[0]);
+      const idList = dupIds.join(',');
+      sqlDb.run(`DELETE FROM users WHERE student_id IN (${idList})`);
+      sqlDb.run(`DELETE FROM students WHERE id IN (${idList})`);
+      console.log(`[Deduplication] Cleaned up ${dupIds.length} duplicate student records (IDs: ${idList})`);
+    }
+  } catch (err) {
+    console.error('[Deduplication] Error cleaning up duplicates:', err.message);
+  }
 }
 
 function seedSqliteSampleStudents(sqlDb) {
@@ -508,8 +548,10 @@ async function initPgDatabase(connectionString) {
       student_id INTEGER,
       password TEXT NOT NULL,
       role TEXT DEFAULT 'teacher',
+      face_descriptor TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS face_descriptor TEXT;
     CREATE TABLE IF NOT EXISTS students (
       id SERIAL PRIMARY KEY,
       lrn TEXT,

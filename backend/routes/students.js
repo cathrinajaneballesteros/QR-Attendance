@@ -140,6 +140,17 @@ router.post('/', auth, staff, async function (req, res) {
             });
         }
 
+        // Prevent duplicate student in the same section
+        const existingStudent = await db.prepare(
+            'SELECT id FROM students WHERE LOWER(TRIM(full_name)) = LOWER(?) AND (teacher_id = ? OR (? IS NULL AND teacher_id IS NULL))'
+        ).get(fullName, teacherId, teacherId);
+
+        if (existingStudent) {
+            return res.status(409).json({
+                error: `Student "${fullName}" already exists in your roster (Student ID #${existingStudent.id}).`
+            });
+        }
+
         const qrCode =
             'QR-' +
             (teacherId ? teacherId + '-' : '') +
@@ -235,6 +246,8 @@ router.post('/import-excel', auth, staff, upload.single('file'), async function 
         );
 
         let insertedCount = 0;
+        let skippedCount = 0;
+        let updatedCount = 0;
         const insertedList = [];
         const timestamp = Date.now().toString().slice(-4);
 
@@ -244,6 +257,32 @@ router.post('/import-excel', auth, staff, upload.single('file'), async function 
             if (!cleanName) continue;
 
             const sex = item.sex === 'F' ? 'F' : 'M';
+            const itemLrn = String(item.lrn || '').trim();
+
+            if (!replaceExisting) {
+                // Deduplication check: does a learner with this name already exist for this teacher?
+                const existing = await db.prepare(
+                    'SELECT id, lrn, qr_code FROM students WHERE LOWER(TRIM(full_name)) = LOWER(?) AND (teacher_id = ? OR (? IS NULL AND teacher_id IS NULL))'
+                ).get(cleanName, teacherId, teacherId);
+
+                if (existing) {
+                    if (itemLrn && !existing.lrn) {
+                        await db.prepare('UPDATE students SET lrn = ? WHERE id = ?').run(itemLrn, existing.id);
+                        updatedCount++;
+                    } else {
+                        skippedCount++;
+                    }
+                    insertedList.push({
+                        id: existing.id,
+                        full_name: cleanName,
+                        sex,
+                        qr_code: existing.qr_code,
+                        alreadyExisted: true
+                    });
+                    continue;
+                }
+            }
+
             const qr = 'QR-' + 
                        (teacherId ? teacherId + '-' : '') +
                        cleanName.replace(/[^A-Z]/gi, '').substring(0, 10).toUpperCase() + '-' +
@@ -252,7 +291,7 @@ router.post('/import-excel', auth, staff, upload.single('file'), async function 
             const result = await insertStmt.run(
                 cleanName,
                 sex,
-                '', // LRN is empty initially, to be filled as needed
+                itemLrn,
                 1,  // Officially enrolled
                 'officially_enrolled',
                 qr,

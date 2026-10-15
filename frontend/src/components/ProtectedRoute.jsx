@@ -14,7 +14,13 @@ export default function ProtectedRoute({ children, allowedRoles = [] }) {
   }
 
   if (!token || !user) {
-    return <Navigate to="/login" replace />;
+    if (allowedRoles.includes('admin') && !allowedRoles.includes('teacher')) {
+      return <Navigate to="/login/admin" replace />;
+    }
+    if (allowedRoles.includes('student')) {
+      return <Navigate to="/login/student" replace />;
+    }
+    return <Navigate to="/login/teacher" replace />;
   }
 
   if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {

@@ -6,7 +6,6 @@ import Navbar from './components/Navbar';
 import ProtectedRoute from './components/ProtectedRoute';
 
 // Pages
-import Login from './pages/Login';
 import TeacherLogin from './pages/TeacherLogin';
 import AdminLogin from './pages/AdminLogin';
 import StudentLogin from './pages/StudentLogin';
@@ -50,8 +49,8 @@ export default function App() {
       <ThemeProvider>
         <Router>
           <Routes>
-          {/* Public Login Routes */}
-          <Route path="/login" element={<Login />} />
+          {/* Public Login Routes - Default is Teacher Login */}
+          <Route path="/login" element={<TeacherLogin />} />
           <Route path="/login/teacher" element={<TeacherLogin />} />
           <Route path="/teacher/login" element={<TeacherLogin />} />
           <Route path="/login/admin" element={<AdminLogin />} />

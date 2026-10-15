@@ -27,7 +27,8 @@ export default function SF2Report() {
   const [error, setError] = useState('');
 
   const loadReport = async () => {
-    if (!selectedMonth) return;
+    // Skip partial/invalid values emitted while the month picker is being edited
+    if (!selectedMonth || !/^\d{4}-(0[1-9]|1[0-2])$/.test(selectedMonth)) return;
     setLoading(true);
     setError('');
 
@@ -37,10 +38,13 @@ export default function SF2Report() {
         const data = await response.json();
         setReportData(data);
       } else {
-        setError('Failed to load report for the selected month.');
+        const body = await response.json().catch(() => ({}));
+        setError(body.error
+          ? `Unable to generate the SF2 report: ${body.error}`
+          : 'Unable to generate the SF2 report for this month. Please try again.');
       }
     } catch (err) {
-      setError('Network error loading SF2 report.');
+      setError('Cannot reach the server. Check that the attendance service is running, then try again.');
     } finally {
       setLoading(false);
     }

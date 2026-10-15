@@ -1,367 +1,285 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { 
-  GraduationCap, 
-  ShieldCheck, 
-  UserCheck, 
-  Lock, 
-  User, 
-  AlertCircle, 
-  Loader2, 
-  ArrowRight 
+import {
+  GraduationCap,
+  ShieldCheck,
+  UserCheck,
+  Lock,
+  User,
+  AlertCircle,
+  Loader2,
+  ArrowRight,
+  Scan,
+  Eye,
+  EyeOff,
+  QrCode,
+  FileSpreadsheet,
+  BellRing,
+  CalendarCheck,
+  ShieldAlert,
+  KeyRound
 } from 'lucide-react';
+import TeacherFaceScannerModal from './TeacherFaceScannerModal';
+
+/**
+ * Dedicated, role-locked login portal.
+ * Each portal (teacher / learner / admin) is rendered on its own route with no
+ * ability to switch roles in-page. The backend additionally enforces `expectedRole`.
+ */
+const PORTALS = {
+  teacher: {
+    apiRole: 'teacher',
+    theme: 'faculty',
+    eyebrow: 'Faculty & Class Adviser Portal',
+    title: 'Faculty Sign In',
+    subtitle: 'Daily QR attendance, DepEd SF2 reporting, and learner monitoring.',
+    icon: GraduationCap,
+    usernameLabel: 'DepEd Email or Username',
+    usernamePlaceholder: 'name@deped.gov.ph',
+    btnText: 'Sign In to Faculty Portal',
+    notice: 'For authorized DepEd teaching personnel only.',
+    features: [
+      { icon: QrCode, text: 'Rapid QR code attendance scanning' },
+      { icon: FileSpreadsheet, text: 'Official DepEd SF2 monthly reports' },
+      { icon: BellRing, text: 'SARDO 5-day absence alerts & SMS' }
+    ]
+  },
+  learner: {
+    apiRole: 'student',
+    theme: 'learner',
+    eyebrow: 'Learner Self Check-In Portal',
+    title: 'Learner Sign In',
+    subtitle: 'Check in for class and view your personal attendance record.',
+    icon: UserCheck,
+    usernameLabel: 'Learner Username or LRN',
+    usernamePlaceholder: 'Username given by your adviser',
+    btnText: 'Sign In to Learner Portal',
+    notice: 'Use the account provided by your class adviser. Do not share your password.',
+    features: [
+      { icon: CalendarCheck, text: 'Self check-in during class hours' },
+      { icon: QrCode, text: 'Your personal attendance QR code' },
+      { icon: FileSpreadsheet, text: 'Monthly attendance history' }
+    ]
+  },
+  admin: {
+    apiRole: 'admin',
+    theme: 'admin',
+    eyebrow: 'Restricted Administration Console',
+    title: 'Administrator Sign In',
+    subtitle: 'School Head & ICT Coordinator system management.',
+    icon: ShieldCheck,
+    usernameLabel: 'Administrator Username',
+    usernamePlaceholder: 'Administrator username',
+    btnText: 'Sign In to Admin Console',
+    notice: 'Authorized personnel only. Administrative sign-ins and actions are recorded in the activity log.',
+    features: [
+      { icon: UserCheck, text: 'Faculty account & section management' },
+      { icon: KeyRound, text: 'Learner account provisioning' },
+      { icon: ShieldAlert, text: 'School-wide attendance oversight' }
+    ]
+  }
+};
 
 export default function LoginPortal({ initialRole = 'teacher' }) {
-  const [role, setRole] = useState(initialRole); // 'teacher' | 'learner' | 'admin'
+  const role = PORTALS[initialRole] ? initialRole : 'teacher';
+  const cfg = PORTALS[role];
+  const Icon = cfg.icon;
+
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showFaceModal, setShowFaceModal] = useState(false);
 
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-
   const isExpired = new URLSearchParams(location.search).get('expired');
 
-  // Sync role if props change
-  useEffect(() => {
-    if (initialRole) setRole(initialRole);
-  }, [initialRole]);
-
-  // Reset error when switching role
-  const handleRoleChange = (newRole) => {
-    if (newRole === role) return;
-    setRole(newRole);
-    setError('');
-  };
-
-  const portalConfig = {
-    teacher: {
-      title: 'Teacher Login',
-      subtitle: 'Daily Attendance & Student Records',
-      color: 'var(--primary, #880e4f)',
-      gradient: 'linear-gradient(135deg, #880e4f 0%, #c2185b 100%)',
-      btnBg: 'linear-gradient(135deg, #880e4f 0%, #c2185b 100%)',
-      badgeBg: '#fce4ec',
-      badgeColor: '#880e4f',
-      bgGradient: 'linear-gradient(135deg, #2a0818 0%, #4a0e2e 50%, #880e4f 100%)',
-      icon: <GraduationCap size={28} />,
-      usernamePlaceholder: 'Enter teacher username',
-      btnText: 'Sign In as Teacher',
-      defaultCreds: 'teacher / teacher123'
-    },
-    learner: {
-      title: 'Learner Login',
-      subtitle: 'Self Check-In & Personal Records',
-      color: '#0284c7',
-      gradient: 'linear-gradient(135deg, #0284c7 0%, #1e40af 100%)',
-      btnBg: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
-      badgeBg: '#e0f2fe',
-      badgeColor: '#0369a1',
-      bgGradient: 'linear-gradient(135deg, #02203c 0%, #034870 50%, #0284c7 100%)',
-      icon: <UserCheck size={28} />,
-      usernamePlaceholder: 'Enter learner username',
-      btnText: 'Sign In as Learner',
-      defaultCreds: 'student / student123'
-    },
-    admin: {
-      title: 'Administrator Login',
-      subtitle: 'System Settings & User Management',
-      color: '#311042',
-      gradient: 'linear-gradient(135deg, #311042 0%, #4338ca 100%)',
-      btnBg: 'linear-gradient(135deg, #311042 0%, #4338ca 100%)',
-      badgeBg: '#f3e8ff',
-      badgeColor: '#581c87',
-      bgGradient: 'linear-gradient(135deg, #130924 0%, #250b38 50%, #4338ca 100%)',
-      icon: <ShieldCheck size={28} />,
-      usernamePlaceholder: 'Enter admin username',
-      btnText: 'Sign In as Admin',
-      defaultCreds: 'admin / admin123'
-    }
-  };
-
-  const current = portalConfig[role] || portalConfig.teacher;
-
-  // Tab sliding pill position
-  const getPillTransform = () => {
-    if (role === 'teacher') return 'translateX(0%)';
-    if (role === 'learner') return 'translateX(100%)';
-    return 'translateX(200%)';
-  };
-
-  const getPillBg = () => {
-    if (role === 'teacher') return 'var(--primary, #880e4f)';
-    if (role === 'learner') return '#0284c7';
-    return '#311042';
+  const redirectFor = (user) => {
+    if (user.role === 'admin') return '/admin';
+    if (user.role === 'student') return '/student-portal';
+    return '/dashboard';
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-
     if (!username.trim() || !password) {
-      setError('Please enter both username and password.');
+      setError('Please enter both your username and password.');
       return;
     }
-
     setLoading(true);
-
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), password })
+        body: JSON.stringify({ username: username.trim(), password, expectedRole: cfg.apiRole })
       });
-
       const data = await response.json();
-
       if (response.ok && data.token && data.user) {
-        // Enforce role validation if user logged in via specific portal
-        if (role === 'admin' && data.user.role !== 'admin') {
-          setError('Access restricted: This portal is for Administrators only. Please select the Teacher or Learner portal.');
-          setLoading(false);
-          return;
-        }
-
         login(data.token, data.user);
-
-        // Redirect based on actual authenticated role
-        if (data.user.role === 'admin') {
-          navigate('/admin');
-        } else if (data.user.role === 'student') {
-          navigate('/student-portal');
-        } else {
-          navigate('/dashboard');
-        }
+        navigate(redirectFor(data.user));
       } else {
         setError(data.error || 'Invalid username or password.');
       }
     } catch (err) {
-      setError('Cannot connect to the server. Please ensure the backend is running.');
+      setError('Cannot connect to the server. Please contact your ICT coordinator.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div 
-      className="login-card-container"
-      style={{ background: current.bgGradient }}
-    >
-      <div className="login-auth-card">
-        {/* Top 3-Way Tab Switcher */}
-        <div>
-          <div className="login-tab-switcher">
-            {/* Sliding Pill Indicator */}
-            <div 
-              className="login-tab-pill" 
-              style={{ 
-                transform: getPillTransform(),
-                background: getPillBg()
-              }} 
-            />
-
-            <button
-              type="button"
-              className="login-tab-btn"
-              onClick={() => handleRoleChange('teacher')}
-              style={{ color: role === 'teacher' ? '#ffffff' : '#64748b' }}
-            >
-              <GraduationCap size={15} />
-              <span>Teacher</span>
-            </button>
-
-            <button
-              type="button"
-              className="login-tab-btn"
-              onClick={() => handleRoleChange('learner')}
-              style={{ color: role === 'learner' ? '#ffffff' : '#64748b' }}
-            >
-              <UserCheck size={15} />
-              <span>Learner</span>
-            </button>
-
-            <button
-              type="button"
-              className="login-tab-btn"
-              onClick={() => handleRoleChange('admin')}
-              style={{ color: role === 'admin' ? '#ffffff' : '#64748b' }}
-            >
-              <ShieldCheck size={15} />
-              <span>Admin</span>
-            </button>
+    <div className={`portal-shell portal-${cfg.theme}`}>
+      {/* Institutional side panel */}
+      <aside className="portal-brand">
+        <div className="portal-brand-inner">
+          <div className="deped-masthead">
+            <div>
+              <div className="deped-masthead-line">Republic of the Philippines</div>
+              <div className="deped-masthead-title">Department of Education</div>
+              <div className="deped-masthead-line">Region I • Schools Division of Ilocos Sur</div>
+            </div>
           </div>
 
-          {/* Animated Header Section (Exact same height across all 3 portals) */}
-          <div key={role} className="login-animated-content" style={{ textAlign: 'center', minHeight: '142px' }}>
-            {/* Icon Avatar */}
-            <div style={{
-              width: '56px',
-              height: '56px',
-              borderRadius: '16px',
-              background: current.gradient,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#ffffff',
-              boxShadow: '0 8px 20px rgba(0, 0, 0, 0.2)',
-              marginBottom: '10px',
-              transition: 'all 0.3s ease'
-            }}>
-              {current.icon}
-            </div>
+          <div className="portal-brand-hero">
+            <span className="portal-eyebrow">{cfg.eyebrow}</span>
+            <h2>Sta. Rosa Elementary School</h2>
+            <p>Daily QR Attendance &amp; School Form 2 Management System</p>
+          </div>
 
-            {/* Title */}
-            <h1 style={{
-              fontSize: '1.45rem',
-              fontWeight: 800,
-              color: '#1e293b',
-              letterSpacing: '-0.02em',
-              margin: '0 0 2px 0'
-            }}>
-              {current.title}
-            </h1>
+          <ul className="portal-feature-list">
+            {cfg.features.map(({ icon: FIcon, text }) => (
+              <li key={text}>
+                <span className="portal-feature-icon"><FIcon size={16} /></span>
+                <span>{text}</span>
+              </li>
+            ))}
+          </ul>
 
-            {/* Subtitle */}
-            <p style={{
-              color: '#64748b',
-              fontSize: '0.78rem',
-              fontWeight: 500,
-              margin: '0 0 6px 0',
-              height: '18px'
-            }}>
-              {current.subtitle}
-            </p>
-
-            {/* Section Pill (Identical height for all 3 portals) */}
-            <div style={{
-              padding: '3px 10px',
-              background: current.badgeBg,
-              color: current.badgeColor,
-              borderRadius: '10px',
-              display: 'inline-block',
-              fontSize: '0.7rem',
-              fontWeight: 700
-            }}>
-              Sta. Rosa ES • Grade 6 Great Geniuses
-            </div>
+          <div className="portal-brand-footer">
+            DepEd Order No. 8, s. 2015 compliant attendance records • RA 10173 Data Privacy Act
           </div>
         </div>
+      </aside>
 
-        {/* Form Body Area */}
-        <div style={{ marginTop: '12px' }}>
+      {/* Form panel */}
+      <main className="portal-form-panel">
+        <div className="portal-form-card">
+
+
+          <div className="portal-form-header">
+            <div className="portal-form-icon"><Icon size={26} /></div>
+            <h1>{cfg.title}</h1>
+            <p>{cfg.subtitle}</p>
+          </div>
+
           {isExpired && (
-            <div className="alert alert-warning" style={{ fontSize: '0.78rem', marginBottom: '14px', padding: '8px 12px' }}>
+            <div className="alert alert-warning portal-alert">
               <AlertCircle size={15} />
               <span>Your session has expired. Please sign in again.</span>
             </div>
           )}
 
           {error && (
-            <div className="alert alert-error" style={{ fontSize: '0.78rem', marginBottom: '14px', padding: '8px 12px' }}>
+            <div className="alert alert-error portal-alert" role="alert">
               <AlertCircle size={15} style={{ flexShrink: 0 }} />
               <span>{error}</span>
             </div>
           )}
 
-          <form onSubmit={handleSubmit}>
-            <div className="form-group" style={{ marginBottom: '14px' }}>
-              <label className="form-label" htmlFor="portal-username" style={{ fontSize: '0.8rem', fontWeight: 600 }}>
-                {role === 'learner' ? 'Learner Username or Email' : role === 'admin' ? 'Admin Username or Email' : 'Teacher Username or Email'}
-              </label>
-              <div style={{ position: 'relative' }}>
+          <form onSubmit={handleSubmit} noValidate>
+            <div className="form-group portal-field">
+              <label className="form-label" htmlFor={`${role}-username`}>{cfg.usernameLabel}</label>
+              <div className="portal-input-wrap">
+                <User size={16} className="portal-input-icon" />
                 <input
-                  id="portal-username"
+                  id={`${role}-username`}
                   type="text"
                   className="form-input"
-                  style={{ paddingLeft: '36px', height: '44px', fontSize: '0.88rem' }}
-                  placeholder={current.usernamePlaceholder}
+                  placeholder={cfg.usernamePlaceholder}
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   autoComplete="username"
                   required
                 />
-                <User size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               </div>
             </div>
 
-            <div className="form-group" style={{ marginBottom: '20px' }}>
-              <label className="form-label" htmlFor="portal-password" style={{ fontSize: '0.8rem', fontWeight: 600 }}>
-                Password
-              </label>
-              <div style={{ position: 'relative' }}>
+            <div className="form-group portal-field">
+              <label className="form-label" htmlFor={`${role}-password`}>Password</label>
+              <div className="portal-input-wrap">
+                <Lock size={16} className="portal-input-icon" />
                 <input
-                  id="portal-password"
-                  type="password"
+                  id={`${role}-password`}
+                  type={showPassword ? 'text' : 'password'}
                   className="form-input"
-                  style={{ paddingLeft: '36px', height: '44px', fontSize: '0.88rem' }}
-                  placeholder="Enter password"
+                  placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
                   required
                 />
-                <Lock size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                <button
+                  type="button"
+                  className="portal-reveal-btn"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
             </div>
 
-            <button
-              type="submit"
-              className="btn"
-              style={{
-                width: '100%',
-                height: '46px',
-                fontSize: '0.92rem',
-                fontWeight: 700,
-                background: current.btnBg,
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '12px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                boxShadow: '0 4px 14px rgba(0, 0, 0, 0.2)',
-                transition: 'all 0.2s ease'
-              }}
-              disabled={loading}
-            >
+            <button id={`${role}-signin-btn`} type="submit" className="portal-submit" disabled={loading}>
               {loading ? (
-                <>
-                  <Loader2 size={18} className="animate-spin" />
-                  <span>Signing in...</span>
-                </>
+                <><Loader2 size={18} className="animate-spin" /><span>Signing in...</span></>
               ) : (
-                <>
-                  <span>{current.btnText}</span>
-                  <ArrowRight size={16} />
-                </>
+                <><span>{cfg.btnText}</span><ArrowRight size={16} /></>
               )}
             </button>
-          </form>
-        </div>
 
-        {/* Footer Area with Consistent Fixed Height */}
-        <div style={{
-          marginTop: '20px',
-          paddingTop: '14px',
-          borderTop: '1px solid #f1f5f9',
-          textAlign: 'center',
-          fontSize: '0.76rem',
-          color: '#64748b',
-          minHeight: '38px',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center'
-        }}>
-          <div>
-            Default Credentials: <strong style={{ color: current.color }}>{current.defaultCreds}</strong>
+            {role === 'teacher' && (
+              <>
+                <div className="portal-divider"><span>Or use biometric sign-in</span></div>
+                <button
+                  id="teacher-face-signin-btn"
+                  type="button"
+                  className="portal-face-btn"
+                  onClick={() => { setError(''); setShowFaceModal(true); }}
+                >
+                  <Scan size={18} />
+                  <span>Scan Face to Sign In</span>
+                </button>
+              </>
+            )}
+          </form>
+
+          <div className={`portal-notice ${role === 'admin' ? 'portal-notice-warn' : ''}`}>
+            {role === 'admin' ? <ShieldAlert size={14} /> : <Lock size={14} />}
+            <span>{cfg.notice}</span>
           </div>
+
+
         </div>
-      </div>
+      </main>
+
+      {showFaceModal && role === 'teacher' && (
+        <TeacherFaceScannerModal
+          isOpen={showFaceModal}
+          onClose={() => setShowFaceModal(false)}
+          mode="login"
+          identifier={username}
+          onSuccess={(data) => {
+            setShowFaceModal(false);
+            login(data.token, data.user);
+            navigate('/dashboard');
+          }}
+        />
+      )}
     </div>
   );
 }

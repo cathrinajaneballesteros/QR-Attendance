@@ -6,8 +6,11 @@ import {
   Trash2, 
   Shield, 
   CheckCircle, 
-  AlertCircle 
+  AlertCircle,
+  Camera,
+  Scan
 } from 'lucide-react';
+import TeacherFaceScannerModal from '../components/TeacherFaceScannerModal';
 
 export default function ManageTeachers() {
   const [users, setUsers] = useState([]);
@@ -17,13 +20,15 @@ export default function ManageTeachers() {
   const [role, setRole] = useState('teacher');
   const [alert, setAlert] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [selectedTeacherForFace, setSelectedTeacherForFace] = useState(null);
 
   const loadUsers = async () => {
     try {
       const response = await apiFetch('/api/auth/users');
       if (response.ok) {
         const data = await response.json();
-        setUsers(data);
+        // Ensure student accounts never appear on Manage Teachers
+        setUsers(Array.isArray(data) ? data.filter(u => u.role !== 'student') : []);
       }
     } catch (err) {
       console.error('Error loading users:', err);
@@ -44,6 +49,14 @@ export default function ManageTeachers() {
     if (!fullName.trim() || !username.trim() || !password) {
       showAlert('All fields are required.', 'error');
       return;
+    }
+
+    if (role === 'teacher') {
+      const depedEmailRegex = /^[a-zA-Z0-9._%+-]+@deped\.gov\.ph$/i;
+      if (!depedEmailRegex.test(username.trim())) {
+        showAlert('Teachers must be registered with an official DepEd email (e.g. name@deped.gov.ph).', 'error');
+        return;
+      }
     }
 
     setLoading(true);
@@ -103,6 +116,32 @@ export default function ManageTeachers() {
     }
   };
 
+  const handleClearFace = async (teacherId, teacherName) => {
+    if (!window.confirm(`Are you sure you want to remove the registered facial recognition data for ${teacherName}?`)) {
+      return;
+    }
+
+    try {
+      const response = await apiFetch('/api/auth/teacher-face-register', {
+        method: 'POST',
+        body: JSON.stringify({
+          teacher_id: teacherId,
+          clear: true
+        })
+      });
+
+      if (response.ok) {
+        showAlert(`Facial profile removed for ${teacherName}.`);
+        loadUsers();
+      } else {
+        const data = await response.json();
+        showAlert(data.error || 'Failed to remove face profile.', 'error');
+      }
+    } catch (err) {
+      showAlert('Network error removing face profile.', 'error');
+    }
+  };
+
   return (
     <div>
       {/* Add User Form */}
@@ -139,15 +178,22 @@ export default function ManageTeachers() {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Username *</label>
+              <label className="form-label">
+                {role === 'teacher' ? 'DepEd Email Address *' : 'Username *'}
+              </label>
               <input
-                type="text"
+                type={role === 'teacher' ? 'email' : 'text'}
                 className="form-input"
-                placeholder="e.g. teacher_tifanny"
+                placeholder={role === 'teacher' ? 'e.g. tifanny.aragon@deped.gov.ph' : 'e.g. admin_office'}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
               />
+              {role === 'teacher' && (
+                <span style={{ display: 'block', marginTop: '5px', fontSize: '0.76rem', color: 'var(--text-muted, #64748b)' }}>
+                  Policy requirement: Only official <strong>@deped.gov.ph</strong> email accounts are permitted.
+                </span>
+              )}
             </div>
 
             <div className="form-group">
@@ -203,10 +249,11 @@ export default function ManageTeachers() {
               <tr>
                 <th style={{ width: '50px' }}>No.</th>
                 <th>Full Name</th>
-                <th>Username</th>
-                <th style={{ width: '130px' }}>Role</th>
-                <th style={{ width: '190px' }}>Class Roster</th>
-                <th style={{ width: '100px', textAlign: 'center' }}>Action</th>
+                <th>Username / DepEd Email</th>
+                <th style={{ width: '110px' }}>Role</th>
+                <th style={{ width: '140px' }}>Biometric Face ID</th>
+                <th style={{ width: '160px' }}>Class Roster</th>
+                <th style={{ width: '90px', textAlign: 'center' }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -219,6 +266,75 @@ export default function ManageTeachers() {
                     <span className={`role-pill ${u.role}`}>
                       {u.role}
                     </span>
+                  </td>
+                  <td>
+                    {u.role === 'teacher' ? (
+                      u.has_face_profile ? (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                          <button
+                            type="button"
+                            className="btn btn-sm"
+                            style={{
+                              background: '#ecfdf5',
+                              color: '#047857',
+                              border: '1px solid #a7f3d0',
+                              borderRadius: '8px',
+                              padding: '3px 8px',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                            onClick={() => setSelectedTeacherForFace(u)}
+                            title="Face biometric active. Click to re-scan/update."
+                          >
+                            <CheckCircle size={13} style={{ color: '#10b981' }} />
+                            <span>Active</span>
+                          </button>
+                          <button
+                            type="button"
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#94a3b8',
+                              cursor: 'pointer',
+                              padding: '2px 4px'
+                            }}
+                            onClick={() => handleClearFace(u.id, u.full_name)}
+                            title="Remove face profile"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          style={{
+                            background: '#fdf2f8',
+                            color: '#be185d',
+                            border: '1px solid #fbcfe8',
+                            borderRadius: '8px',
+                            padding: '3px 8px',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                          onClick={() => setSelectedTeacherForFace(u)}
+                          title="Enroll face for biometric login"
+                        >
+                          <Camera size={13} />
+                          <span>+ Enroll</span>
+                        </button>
+                      )
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>N/A (Admin)</span>
+                    )}
                   </td>
                   <td>
                     {u.role === 'teacher' ? (
@@ -257,6 +373,20 @@ export default function ManageTeachers() {
           </table>
         </div>
       </div>
+
+      {selectedTeacherForFace && (
+        <TeacherFaceScannerModal
+          isOpen={Boolean(selectedTeacherForFace)}
+          onClose={() => setSelectedTeacherForFace(null)}
+          mode="register"
+          teacher={selectedTeacherForFace}
+          onSuccess={() => {
+            showAlert(`Face profile enrolled successfully for ${selectedTeacherForFace.full_name}!`);
+            setSelectedTeacherForFace(null);
+            loadUsers();
+          }}
+        />
+      )}
     </div>
   );
 }
