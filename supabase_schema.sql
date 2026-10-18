@@ -36,9 +36,12 @@ CREATE TABLE IF NOT EXISTS students (
   qr_code TEXT UNIQUE,
   is_enrolled INTEGER DEFAULT 1,
   enrollment_status TEXT DEFAULT 'officially_enrolled',
+  face_descriptor TEXT,
   teacher_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE students ADD COLUMN IF NOT EXISTS face_descriptor TEXT;
 
 -- 3. ATTENDANCE TABLE (Daily records with GPS, Room, and Status)
 CREATE TABLE IF NOT EXISTS attendance (
@@ -51,8 +54,11 @@ CREATE TABLE IF NOT EXISTS attendance (
   latitude DOUBLE PRECISION,
   longitude DOUBLE PRECISION,
   room TEXT DEFAULT 'Room 101 - Grade 6 Great Geniuses',
+  face_verified INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE attendance ADD COLUMN IF NOT EXISTS face_verified INTEGER DEFAULT 0;
 
 -- 4. SMS LOGS TABLE
 CREATE TABLE IF NOT EXISTS sms_logs (
@@ -123,7 +129,8 @@ INSERT INTO app_settings (setting_key, setting_value) VALUES
   ('attendance_deadline', '16:00'),
   ('absence_threshold', '5'),
   ('late_after', '08:00'),
-  ('sms_enabled', '0')
+  ('sms_enabled', '0'),
+  ('student_face_verification', '1')
 ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value;
 
 -- ====================================================================

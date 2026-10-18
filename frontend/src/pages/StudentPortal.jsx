@@ -597,7 +597,7 @@ export default function StudentPortal() {
       </div>
 
       {/* History and Change Password Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '20px' }}>
+      <div className="responsive-two-col">
         
         {/* Attendance History Section */}
         <div className="card">

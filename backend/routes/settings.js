@@ -19,7 +19,18 @@ const defaults = {
     attendance_deadline: '16:00',
     absence_threshold: '5',
     late_after: '08:00',
-    sms_enabled: '0'
+    sms_enabled: '0',
+    sms_provider: 'philsms',
+    philsms_api_token: '',
+    philsms_sender_id: 'PhilSMS',
+    android_gateway_url: '',
+    android_gateway_key: '',
+    semaphore_api_key: '',
+    sms_sender_name: '',
+    twilio_account_sid: '',
+    twilio_auth_token: '',
+    twilio_phone_number: '',
+    student_face_verification: '1'
 };
 
 async function getSettings(db) {

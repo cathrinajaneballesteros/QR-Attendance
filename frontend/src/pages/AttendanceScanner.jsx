@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Link } from 'react-router-dom';
 import { apiFetch } from '../utils/api';
-import { playSuccessChime, playDuplicateChime } from '../utils/sound';
+import { playSuccessChime, playDuplicateChime, playWarningChime } from '../utils/sound';
+import { faceapi, loadFaceApiModels } from '../utils/faceApi';
 import LiveClock from '../components/LiveClock';
 import { 
   Camera, 
@@ -19,7 +20,8 @@ import {
   Laptop,
   History,
   Download,
-  ShieldAlert
+  ShieldAlert,
+  ShieldCheck
 } from 'lucide-react';
 
 export default function AttendanceScanner() {
@@ -56,6 +58,11 @@ export default function AttendanceScanner() {
         }
       })
       .catch(() => {});
+
+    // Preload biometric models for anti-proxy face recognition
+    loadFaceApiModels().catch(err => {
+      console.warn('Face models preload notice:', err.message);
+    });
 
     // Acquire device GPS location
     if (navigator.geolocation) {
@@ -101,10 +108,27 @@ export default function AttendanceScanner() {
     if (!qrCode || loading) return;
     setLoading(true);
 
+    let faceDescriptor = null;
+    try {
+      const videoEl = document.querySelector('#qr-reader video');
+      if (videoEl && videoEl.videoWidth > 0 && faceapi.nets.tinyFaceDetector.isLoaded) {
+        const detection = await faceapi
+          .detectSingleFace(videoEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.25 }))
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+        if (detection && detection.descriptor) {
+          faceDescriptor = Array.from(detection.descriptor);
+        }
+      }
+    } catch (faceErr) {
+      // Non-blocking face capture
+    }
+
     const payload = {
       qr_code: qrCode,
       latitude: deviceCoords.latitude,
-      longitude: deviceCoords.longitude
+      longitude: deviceCoords.longitude,
+      faceDescriptor
     };
 
     try {
@@ -124,19 +148,36 @@ export default function AttendanceScanner() {
           });
         } else {
           playSuccessChime();
+          const faceNotice = data.face_verified ? ' • [Face Verified ✓]' : (data.face_not_enrolled ? ' • [No Face Registered]' : '');
           setScanResult({
             type: 'success',
-            message: `Recorded: ${data.student} at ${data.time_in} (${data.status === 'late' ? 'Late' : 'Present'}) • ${data.room || scannerSettings.room_name}`
+            message: `Recorded: ${data.student} at ${data.time_in} (${data.status === 'late' ? 'Late' : 'Present'})${faceNotice} • ${data.room || scannerSettings.room_name}`
           });
         }
         loadRecords();
       } else {
-        // Check if error is due to unenrollment (Requirement 11)
-        const isEnrollmentBlocked = data.blocked || (data.error && data.error.includes('not officially enrolled'));
-        setScanResult({
-          type: isEnrollmentBlocked ? 'enrollment_blocked' : 'error',
-          message: data.error || 'Student QR code not found.'
-        });
+        if (data.face_mismatch) {
+          playWarningChime();
+          setScanResult({
+            type: 'face_mismatch',
+            student: data.student,
+            confidence: data.confidence,
+            message: data.error || 'Biometric Security Mismatch: Face in view does not match student profile.'
+          });
+        } else if (data.face_required) {
+          playWarningChime();
+          setScanResult({
+            type: 'face_required',
+            message: data.error
+          });
+        } else {
+          // Check if error is due to unenrollment (Requirement 11)
+          const isEnrollmentBlocked = data.blocked || (data.error && data.error.includes('not officially enrolled'));
+          setScanResult({
+            type: isEnrollmentBlocked ? 'enrollment_blocked' : 'error',
+            message: data.error || 'Student QR code not found.'
+          });
+        }
       }
     } catch (err) {
       setScanResult({
@@ -151,7 +192,13 @@ export default function AttendanceScanner() {
   const startScanner = async () => {
     setScanResult(null);
     try {
-      if (!scannerRef.current) {
+      if (scannerRef.current) {
+        try {
+          if (scannerRef.current.isScanning) {
+            await scannerRef.current.stop();
+          }
+        } catch (e) {}
+      } else {
         scannerRef.current = new Html5Qrcode('qr-reader');
       }
 
@@ -179,9 +226,11 @@ export default function AttendanceScanner() {
   };
 
   const stopScanner = async () => {
-    if (scannerRef.current && scanning) {
+    if (scannerRef.current) {
       try {
-        await scannerRef.current.stop();
+        if (scannerRef.current.isScanning) {
+          await scannerRef.current.stop();
+        }
       } catch (err) {
         console.error('Camera stop error:', err);
       }
@@ -265,7 +314,7 @@ export default function AttendanceScanner() {
               fontWeight: 700
             }}>
               <Laptop size={14} />
-              <span>Flipped Classroom Mode (Remote Allowed)</span>
+              <span>Online Mode (Remote Allowed)</span>
             </span>
           ) : (
             <span style={{
@@ -291,7 +340,7 @@ export default function AttendanceScanner() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+      <div className="responsive-two-col" style={{ marginBottom: '24px' }}>
         {/* Scanner Card */}
         <div className="card" style={{ textAlign: 'center' }}>
           <div className="card-header" style={{ justifyContent: 'center' }}>
@@ -302,16 +351,25 @@ export default function AttendanceScanner() {
           </div>
 
           {/* Scanner Viewport */}
-          <div className="scanner-viewport" id="qr-reader">
+          <div className="scanner-viewport" style={{ position: 'relative', overflow: 'hidden', minHeight: '300px', background: '#1e293b', borderRadius: '12px' }}>
+            {/* Dedicated container for Html5Qrcode - React must NOT insert children into this element */}
+            <div id="qr-reader" style={{ width: '100%', minHeight: '300px' }}></div>
+
+            {/* Sibling overlay for when camera is off */}
             {!scanning && (
               <div style={{
-                height: '280px',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#fff',
-                background: '#1e293b'
+                background: '#1e293b',
+                zIndex: 2
               }}>
                 <Camera size={48} style={{ opacity: 0.5, marginBottom: '12px' }} />
                 <p style={{ fontSize: '0.88rem', opacity: 0.8 }}>Camera is turned off</p>
@@ -347,15 +405,33 @@ export default function AttendanceScanner() {
                 ? 'alert-success' 
                 : scanResult.type === 'duplicate' 
                 ? 'alert-warning' 
+                : (scanResult.type === 'face_mismatch' || scanResult.type === 'face_required')
+                ? 'alert-error'
                 : 'alert-error'
-            }`} style={{ textAlign: 'left' }}>
+            }`} style={{
+              textAlign: 'left',
+              border: (scanResult.type === 'face_mismatch' || scanResult.type === 'face_required') ? '2px solid #ef4444' : undefined,
+              backgroundColor: (scanResult.type === 'face_mismatch' || scanResult.type === 'face_required') ? 'rgba(239, 68, 68, 0.15)' : undefined
+            }}>
               {scanResult.type === 'success' && <CheckCircle size={18} />}
               {scanResult.type === 'duplicate' && <AlertTriangle size={18} />}
               {scanResult.type === 'error' && <XCircle size={18} />}
               {scanResult.type === 'enrollment_blocked' && <ShieldAlert size={20} style={{ color: '#dc2626', flexShrink: 0 }} />}
+              {(scanResult.type === 'face_mismatch' || scanResult.type === 'face_required') && (
+                <ShieldAlert size={22} style={{ color: '#ef4444', flexShrink: 0 }} />
+              )}
               <div>
-                <div style={{ fontWeight: 700 }}>
-                  {scanResult.type === 'enrollment_blocked' ? 'Attendance Denied (Not Enrolled)' : 'Attendance Scan Result'}
+                <div style={{
+                  fontWeight: 800,
+                  color: (scanResult.type === 'face_mismatch' || scanResult.type === 'face_required') ? '#ef4444' : undefined
+                }}>
+                  {scanResult.type === 'enrollment_blocked'
+                    ? 'Attendance Denied (Not Enrolled)'
+                    : scanResult.type === 'face_mismatch'
+                    ? '⚠️ PROXY ATTENDANCE BLOCKED (Face Mismatch)'
+                    : scanResult.type === 'face_required'
+                    ? '⚠️ Biometric Face Verification Required'
+                    : 'Attendance Scan Result'}
                 </div>
                 <div style={{ fontSize: '0.82rem', marginTop: '2px' }}>{scanResult.message}</div>
               </div>
@@ -439,7 +515,24 @@ export default function AttendanceScanner() {
                         {r.time_in} • {r.room || scannerSettings.room_name}
                       </div>
                     </div>
-                    <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {r.face_verified === 1 && (
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                          fontSize: '0.68rem',
+                          color: '#10b981',
+                          background: 'rgba(16, 185, 129, 0.15)',
+                          border: '1px solid rgba(16, 185, 129, 0.3)',
+                          padding: '2px 6px',
+                          borderRadius: '8px',
+                          fontWeight: 700
+                        }} title="Biometrically Verified: Live Face Matched Profile">
+                          <ShieldCheck size={11} />
+                          <span>Face ✓</span>
+                        </span>
+                      )}
                       <span className={`pill-badge ${r.status === 'present' ? 'badge-present' : 'badge-late'}`} style={{ fontSize: '0.72rem' }}>
                         {r.status === 'present' ? 'Present' : 'Late'}
                       </span>

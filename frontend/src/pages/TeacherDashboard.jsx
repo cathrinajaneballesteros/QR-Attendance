@@ -103,7 +103,7 @@ export default function TeacherDashboard() {
                 fontWeight: 700
               }}>
                 {stats.attendance_mode === 'flipped' ? <Laptop size={13} /> : <MapPin size={13} />}
-                <span>{stats.attendance_mode === 'flipped' ? 'Flipped Classroom' : 'Onsite Mode'}</span>
+                <span>{stats.attendance_mode === 'flipped' ? 'Online Mode' : 'Onsite Mode'}</span>
               </span>
             </div>
             <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '4px' }}>

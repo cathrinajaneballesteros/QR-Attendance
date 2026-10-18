@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { NavLink, Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { NavLink, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { 
@@ -14,13 +14,22 @@ import {
   GraduationCap,
   ListTodo,
   History,
-  Palette
+  Palette,
+  Menu,
+  X
 } from 'lucide-react';
 
 export default function Navbar() {
   const { user, logout } = useAuth();
   const { theme, changeTheme, themes } = useTheme();
   const [showThemeMenu, setShowThemeMenu] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const location = useLocation();
+
+  // Close mobile menu whenever route changes
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   if (!user) return null;
 
@@ -28,66 +37,71 @@ export default function Navbar() {
   const isTeacher = user.role === 'teacher';
   const isStudent = user.role === 'student';
 
+  const navItems = [];
+  if (isAdmin) {
+    navItems.push(
+      { to: '/admin', label: 'Admin Dashboard', icon: <LayoutDashboard size={17} /> },
+      { to: '/manage-teachers', label: 'Manage Teachers', icon: <UserCheck size={17} /> },
+      { to: '/student-accounts', label: 'Student Accounts', icon: <GraduationCap size={17} /> },
+      { to: '/history', label: 'Historical Data', icon: <History size={17} /> }
+    );
+  } else if (isTeacher) {
+    navItems.push(
+      { to: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={17} /> },
+      { to: '/attendance', label: 'Attendance', icon: <QrCode size={17} /> },
+      { to: '/history', label: 'Historical Data', icon: <History size={17} /> },
+      { to: '/students', label: 'Students', icon: <Users size={17} /> },
+      { to: '/sf2-report', label: 'SF2 Report', icon: <FileSpreadsheet size={17} /> },
+      { to: '/sf2-progress', label: 'SF2 Progress', icon: <ListTodo size={17} /> },
+      { to: '/sms-logs', label: 'SMS Logs', icon: <MessageSquare size={17} /> },
+      { to: '/settings', label: 'Settings', icon: <Sliders size={17} /> }
+    );
+  } else if (isStudent) {
+    navItems.push(
+      { to: '/student-portal', label: 'Student Portal', icon: <GraduationCap size={17} /> }
+    );
+  }
+
   return (
     <header className="navbar-container">
       <div className="navbar-inner">
         <div className="navbar-top">
-          <Link to={isAdmin ? '/admin' : isStudent ? '/student-portal' : '/dashboard'} className="brand-wrapper">
+          <Link 
+            to={isAdmin ? '/admin' : isStudent ? '/student-portal' : '/dashboard'} 
+            className="brand-wrapper"
+            onClick={() => setMobileMenuOpen(false)}
+          >
             <div className="brand-logo">
-              <QrCode size={24} />
+              <QrCode size={22} />
             </div>
             <div className="brand-info">
               <h1>QR<span className="highlight">Attend</span></h1>
               <p>
                 {isAdmin
-                  ? 'Sta. Rosa ES • Administration Console'
+                  ? 'Sta. Rosa ES • Admin'
                   : isStudent
-                    ? 'Sta. Rosa ES • Learner Portal'
-                    : 'Sta. Rosa ES • Faculty Portal'}
+                    ? 'Sta. Rosa ES • Learner'
+                    : 'Sta. Rosa ES • Faculty'}
               </p>
             </div>
           </Link>
 
-          <div className="navbar-user-actions" style={{ position: 'relative' }}>
-            {/* Theme Switcher Button (Requirement 12) */}
+          <div className="navbar-user-actions">
+            {/* Theme Switcher Button */}
             <div style={{ position: 'relative' }}>
               <button 
                 type="button"
-                className="btn btn-secondary btn-sm"
+                className="btn btn-secondary btn-sm theme-btn"
                 onClick={() => setShowThemeMenu(!showThemeMenu)}
                 title="Change Attendance Theme"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '6px 10px',
-                  borderRadius: '10px'
-                }}
               >
                 <Palette size={14} />
-                <span style={{ fontSize: '0.74rem', textTransform: 'capitalize' }}>{theme}</span>
+                <span className="theme-name">{theme}</span>
               </button>
 
               {showThemeMenu && (
-                <div style={{
-                  position: 'absolute',
-                  top: '100%',
-                  right: 0,
-                  marginTop: '8px',
-                  background: '#ffffff',
-                  borderRadius: '12px',
-                  boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
-                  border: '1px solid var(--border)',
-                  padding: '8px',
-                  minWidth: '180px',
-                  zIndex: 200,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '4px'
-                }}>
-                  <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-muted)', padding: '4px 8px', textTransform: 'uppercase' }}>
-                    Select Theme
-                  </div>
+                <div className="theme-dropdown-menu">
+                  <div className="theme-dropdown-title">Select Theme</div>
                   {themes.map(t => (
                     <button
                       key={t.id}
@@ -95,20 +109,7 @@ export default function Navbar() {
                         changeTheme(t.id);
                         setShowThemeMenu(false);
                       }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '6px 10px',
-                        borderRadius: '8px',
-                        border: 'none',
-                        background: theme === t.id ? 'var(--primary-light)' : 'transparent',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        fontSize: '0.8rem',
-                        fontWeight: theme === t.id ? 700 : 500,
-                        color: theme === t.id ? 'var(--primary)' : 'var(--text-primary)'
-                      }}
+                      className={`theme-dropdown-item ${theme === t.id ? 'active' : ''}`}
                     >
                       <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: t.primary, display: 'inline-block' }} />
                       <span>{t.name}</span>
@@ -118,88 +119,72 @@ export default function Navbar() {
               )}
             </div>
 
-            <div className="user-badge">
+            {/* Desktop User Info & Logout */}
+            <div className="user-badge desktop-only-badge">
               <span className={`role-pill ${user.role}`}>{user.role}</span>
-              <span>{user.full_name || user.username}</span>
+              <span className="user-name-text">{user.full_name || user.username}</span>
             </div>
 
-            <button className="btn-logout" onClick={logout} title="Sign Out">
+            <button className="btn-logout desktop-only-logout" onClick={logout} title="Sign Out">
               <LogOut size={14} />
               <span>Logout</span>
+            </button>
+
+            {/* Mobile Hamburger Toggle Button */}
+            <button 
+              type="button"
+              className="mobile-menu-btn"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              aria-label={mobileMenuOpen ? 'Close Navigation Menu' : 'Open Navigation Menu'}
+            >
+              {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
           </div>
         </div>
 
-        <nav className="navbar-links" aria-label="Main Navigation">
-          {/* Admin Links - Only Admin Dashboard, Manage Teachers, and Historical Data */}
-          {isAdmin && (
-            <>
-              <NavLink to="/admin" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <LayoutDashboard size={15} />
-                <span>Admin Dashboard</span>
-              </NavLink>
-              <NavLink to="/manage-teachers" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <UserCheck size={15} />
-                <span>Manage Teachers</span>
-              </NavLink>
-              <NavLink to="/student-accounts" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <GraduationCap size={15} />
-                <span>Student Accounts</span>
-              </NavLink>
-              <NavLink to="/history" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <History size={15} />
-                <span>Historical Data</span>
-              </NavLink>
-            </>
-          )}
-
-          {/* Teacher Links */}
-          {isTeacher && (
-            <>
-              <NavLink to="/dashboard" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <LayoutDashboard size={15} />
-                <span>Dashboard</span>
-              </NavLink>
-              <NavLink to="/attendance" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <QrCode size={15} />
-                <span>Attendance</span>
-              </NavLink>
-              {/* Requirement 9: Historical Data NavLink */}
-              <NavLink to="/history" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <History size={15} />
-                <span>Historical Data</span>
-              </NavLink>
-              <NavLink to="/students" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <Users size={15} />
-                <span>Students</span>
-              </NavLink>
-              <NavLink to="/sf2-report" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <FileSpreadsheet size={15} />
-                <span>SF2 Report</span>
-              </NavLink>
-              <NavLink to="/sf2-progress" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <ListTodo size={15} />
-                <span>SF2 Progress</span>
-              </NavLink>
-              <NavLink to="/sms-logs" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <MessageSquare size={15} />
-                <span>SMS Logs</span>
-              </NavLink>
-              <NavLink to="/settings" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <Sliders size={15} />
-                <span>Settings</span>
-              </NavLink>
-            </>
-          )}
-
-          {/* Student Links */}
-          {isStudent && (
-            <NavLink to="/student-portal" className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-              <GraduationCap size={15} />
-              <span>Student Portal</span>
+        {/* Desktop Navigation Links */}
+        <nav className="navbar-links desktop-nav" aria-label="Main Navigation">
+          {navItems.map(item => (
+            <NavLink 
+              key={item.to} 
+              to={item.to} 
+              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+            >
+              {item.icon}
+              <span>{item.label}</span>
             </NavLink>
-          )}
+          ))}
         </nav>
+        {/* Mobile Navigation Dropdown Panel */}
+        {mobileMenuOpen && (
+          <div className="mobile-nav-panel">
+            <div className="mobile-user-card">
+              <span className={`role-pill ${user.role}`}>{user.role}</span>
+              <span className="user-name-text">{user.full_name || user.username}</span>
+            </div>
+
+            <nav className="mobile-nav-list" aria-label="Mobile Navigation">
+              {navItems.map(item => (
+                <NavLink 
+                  key={item.to} 
+                  to={item.to} 
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={({ isActive }) => `mobile-nav-btn ${isActive ? 'active' : ''}`}
+                >
+                  <span className="mobile-btn-icon">{item.icon}</span>
+                  <span className="mobile-btn-text">{item.label}</span>
+                </NavLink>
+              ))}
+            </nav>
+
+            <div className="mobile-panel-footer">
+              <button className="btn btn-danger mobile-logout-btn" onClick={logout}>
+                <LogOut size={16} />
+                <span>Sign Out ({user.username || 'User'})</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </header>
   );

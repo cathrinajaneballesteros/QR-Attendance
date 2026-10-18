@@ -532,10 +532,8 @@ export default function SF2Report() {
 
         {/* DepEd SF2 Bottom Summary & Guidelines Section (Matching Excel Format) */}
         {reportData && (
-          <div style={{ 
+          <div className="responsive-two-col" style={{ 
             marginTop: '20px', 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', 
             gap: '16px',
             color: '#000000',
             fontSize: '0.74rem'

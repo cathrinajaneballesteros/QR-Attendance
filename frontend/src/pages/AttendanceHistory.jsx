@@ -25,7 +25,9 @@ import {
   MessageSquare,
   ListTodo,
   Activity,
-  Layers
+  Layers,
+  LayoutGrid,
+  List
 } from 'lucide-react';
 
 export default function AttendanceHistory() {
@@ -64,6 +66,7 @@ export default function AttendanceHistory() {
   const [searchQuery, setSearchQuery] = useState('');
   const [teacherActiveTab, setTeacherActiveTab] = useState('attendance'); // 'attendance' | 'activity'
   const [studentModalData, setStudentModalData] = useState(null);
+  const [viewMode, setViewMode] = useState(typeof window !== 'undefined' && window.innerWidth <= 768 ? 'cards' : 'table');
 
   // Load Admin Data (Only what's happening on admin side)
   const loadAdminHistory = async () => {
@@ -722,80 +725,191 @@ export default function AttendanceHistory() {
             </div>
           </div>
 
-          {/* Main Teacher Attendance Records Table */}
+          {/* Main Teacher Attendance Records Table / Cards */}
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--primary)' }}>
-                Teacher Attendance Records ({filteredTeacherRecords.length} entries found)
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--primary)' }}>
+                  Teacher Attendance Records ({filteredTeacherRecords.length} entries found)
+                </div>
+                <span style={{ fontSize: '0.73rem', background: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: '10px', fontWeight: 600 }}>
+                  Scope: Teacher Side Updates Only
+                </span>
               </div>
-              <span style={{ fontSize: '0.75rem', background: '#f1f5f9', color: '#475569', padding: '4px 10px', borderRadius: '12px', fontWeight: 600 }}>
-                Scope: Teacher Side Updates Only
-              </span>
+
+              {/* View Switcher: Cards vs Table */}
+              <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${viewMode === 'cards' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setViewMode('cards')}
+                  style={{ padding: '5px 10px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  title="Card View (best for mobile devices)"
+                >
+                  <LayoutGrid size={13} />
+                  <span>Cards</span>
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setViewMode('table')}
+                  style={{ padding: '5px 10px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  title="Table View (swipeable spreadsheet)"
+                >
+                  <List size={13} />
+                  <span>Table</span>
+                </button>
+              </div>
             </div>
 
-            <div className="table-responsive">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Learner Name</th>
-                    <th>Sex</th>
-                    <th>Time In</th>
-                    <th>Status</th>
-                    <th>Classroom / Room</th>
-                    <th>Recorded By</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredTeacherRecords.length === 0 ? (
-                    <tr>
-                      <td colSpan="8" style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
-                        No teacher-side attendance records match your current filters.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredTeacherRecords.map((r) => (
-                      <tr key={`${r.id}-${r.date}`}>
-                        <td style={{ fontWeight: 600, fontSize: '0.82rem' }}>{r.date}</td>
-                        <td>
-                          <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{r.full_name}</div>
-                          {r.lrn && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>LRN: {r.lrn}</div>}
-                        </td>
-                        <td>
-                          <span className={`pill-badge ${r.sex === 'M' ? 'badge-male' : 'badge-female'}`} style={{ fontSize: '0.72rem' }}>
-                            {r.sex}
-                          </span>
-                        </td>
-                        <td style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>{r.time_in}</td>
-                        <td>
-                          <span className={`pill-badge ${r.status === 'present' ? 'badge-present' : 'badge-late'}`}>
-                            {r.status === 'present' ? 'Present' : 'Late'}
-                          </span>
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                            <Building size={13} style={{ color: 'var(--primary)' }} />
-                            <span>{r.room || 'Room 101 - Grade 6'}</span>
+            {viewMode === 'cards' ? (
+              /* Mobile Card View (Easy to read on all phone sizes) */
+              <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {filteredTeacherRecords.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                    No teacher-side attendance records match your current filters.
+                  </div>
+                ) : (
+                  filteredTeacherRecords.map((r) => (
+                    <div 
+                      key={`${r.id}-${r.date}`}
+                      style={{
+                        background: '#ffffff',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '12px 14px',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px', gap: '8px' }}>
+                        <div>
+                          <div style={{ fontWeight: 800, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+                            {r.full_name}
                           </div>
-                        </td>
-                        <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{r.recorded_by || 'teacher'}</td>
-                        <td>
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            style={{ fontSize: '0.72rem', padding: '4px 8px' }}
-                            onClick={() => handleStudentClick(r.student_id)}
-                          >
-                            <GraduationCap size={13} />
-                            <span>Timeline</span>
-                          </button>
+                          <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px' }}>
+                            <span>📅 {r.date}</span>
+                            {r.lrn && <span>• LRN: {r.lrn}</span>}
+                          </div>
+                        </div>
+                        <span className={`pill-badge ${r.status === 'present' ? 'badge-present' : 'badge-late'}`}>
+                          {r.status === 'present' ? 'Present' : 'Late'}
+                        </span>
+                      </div>
+
+                      <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: 'repeat(2, 1fr)', 
+                        gap: '8px', 
+                        padding: '8px 10px', 
+                        background: 'var(--surface-gradient, #f8fafc)', 
+                        borderRadius: '8px', 
+                        fontSize: '0.78rem', 
+                        marginBottom: '10px' 
+                      }}>
+                        <div>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', display: 'block' }}>Time In</span>
+                          <strong style={{ color: 'var(--primary)', fontSize: '0.85rem' }}>{r.time_in || '--:--'}</strong>
+                        </div>
+                        <div>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', display: 'block' }}>Gender</span>
+                          <strong style={{ textTransform: 'capitalize' }}>{r.sex === 'M' ? 'Male (M)' : 'Female (F)'}</strong>
+                        </div>
+                        <div style={{ gridColumn: 'span 2' }}>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', display: 'block' }}>Designated Room</span>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)' }}>
+                            <Building size={12} style={{ color: 'var(--primary)' }} />
+                            <span>{r.room || 'Room 101 - Grade 6 Great Geniuses'}</span>
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '4px', borderTop: '1px solid #f1f5f9' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                          Recorded by: <strong style={{ color: 'var(--text-secondary)' }}>{r.recorded_by || 'teacher'}</strong>
+                        </span>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          style={{ fontSize: '0.74rem', padding: '4px 10px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          onClick={() => handleStudentClick(r.student_id)}
+                        >
+                          <GraduationCap size={13} />
+                          <span>Student Timeline</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              /* Table View (Swipeable on mobile with full breathing room) */
+              <div className="table-responsive">
+                <div className="table-scroll-hint">
+                  <span>↔ Swipe sideways to view all columns</span>
+                  <span>8 Columns Total</span>
+                </div>
+                <table className="data-table" style={{ minWidth: '720px' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: '110px' }}>Date</th>
+                      <th>Learner Name</th>
+                      <th style={{ width: '60px' }}>Sex</th>
+                      <th style={{ width: '100px' }}>Time In</th>
+                      <th style={{ width: '90px' }}>Status</th>
+                      <th>Classroom / Room</th>
+                      <th style={{ width: '110px' }}>Recorded By</th>
+                      <th style={{ width: '90px', textAlign: 'center' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredTeacherRecords.length === 0 ? (
+                      <tr>
+                        <td colSpan="8" style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                          No teacher-side attendance records match your current filters.
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ) : (
+                      filteredTeacherRecords.map((r) => (
+                        <tr key={`${r.id}-${r.date}`}>
+                          <td style={{ fontWeight: 600, fontSize: '0.82rem', whiteSpace: 'nowrap' }}>{r.date}</td>
+                          <td>
+                            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{r.full_name}</div>
+                            {r.lrn && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>LRN: {r.lrn}</div>}
+                          </td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            <span className={`pill-badge ${r.sex === 'M' ? 'badge-male' : 'badge-female'}`} style={{ fontSize: '0.72rem' }}>
+                              {r.sex}
+                            </span>
+                          </td>
+                          <td style={{ fontWeight: 600, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{r.time_in}</td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            <span className={`pill-badge ${r.status === 'present' ? 'badge-present' : 'badge-late'}`}>
+                              {r.status === 'present' ? 'Present' : 'Late'}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                              <Building size={13} style={{ color: 'var(--primary)' }} />
+                              <span>{r.room || 'Room 101 - Grade 6'}</span>
+                            </div>
+                          </td>
+                          <td style={{ fontSize: '0.78rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{r.recorded_by || 'teacher'}</td>
+                          <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontSize: '0.72rem', padding: '4px 8px' }}
+                              onClick={() => handleStudentClick(r.student_id)}
+                            >
+                              <GraduationCap size={13} />
+                              <span>Timeline</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </>
       ) : (

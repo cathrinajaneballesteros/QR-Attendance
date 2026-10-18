@@ -230,9 +230,11 @@ async function initSqliteDatabase() {
   ensureColumn('students', 'is_enrolled', 'INTEGER DEFAULT 1');
   ensureColumn('students', 'enrollment_status', "TEXT DEFAULT 'officially_enrolled'");
   ensureColumn('students', 'teacher_id', 'INTEGER');
+  ensureColumn('students', 'face_descriptor', 'TEXT');
   ensureColumn('attendance', 'latitude', 'REAL');
   ensureColumn('attendance', 'longitude', 'REAL');
   ensureColumn('attendance', 'room', 'TEXT');
+  ensureColumn('attendance', 'face_verified', 'INTEGER DEFAULT 0');
 
   sqlDb.run("UPDATE students SET is_enrolled = 1 WHERE is_enrolled IS NULL OR is_enrolled = ''");
   sqlDb.run("UPDATE students SET enrollment_status = 'officially_enrolled' WHERE enrollment_status IS NULL OR enrollment_status = ''");
@@ -256,7 +258,8 @@ async function initSqliteDatabase() {
     attendance_deadline: '16:00',
     absence_threshold: '5',
     late_after: '08:00',
-    sms_enabled: '0'
+    sms_enabled: '0',
+    student_face_verification: '1'
   };
 
   for (const [key, value] of Object.entries(defaults)) {

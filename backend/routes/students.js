@@ -42,6 +42,9 @@ async function ensureStudentColumns(db) {
         if (!columns.includes('teacher_id')) {
             await db.exec('ALTER TABLE students ADD COLUMN teacher_id INTEGER');
         }
+        if (!columns.includes('face_descriptor')) {
+            await db.exec('ALTER TABLE students ADD COLUMN face_descriptor TEXT');
+        }
 
         await db.exec("UPDATE students SET is_enrolled = 1 WHERE is_enrolled IS NULL OR is_enrolled = ''");
         await db.exec("UPDATE students SET enrollment_status = 'officially_enrolled' WHERE enrollment_status IS NULL OR enrollment_status = ''");
@@ -75,7 +78,9 @@ router.get('/', auth, staff, async function (req, res) {
             return {
                 ...s,
                 is_enrolled: isBlocked ? 0 : 1,
-                enrollment_status: isBlocked ? (s.enrollment_status || 'not_enrolled') : 'officially_enrolled'
+                enrollment_status: isBlocked ? (s.enrollment_status || 'not_enrolled') : 'officially_enrolled',
+                has_face_profile: s.face_descriptor ? 1 : 0,
+                face_descriptor: undefined // strip raw descriptor from list response for performance
             };
         });
 
@@ -489,6 +494,86 @@ router.delete('/:id', auth, staff, async function (req, res) {
     } catch (error) {
         console.error('Delete student error:', error.message);
         res.status(500).json({ error: 'Could not delete student' });
+    }
+});
+
+// ── Student Face Biometric Enrollment ────────────────────────────────────────
+
+// POST /api/students/:id/face  — Enroll or update a student's facial descriptor
+router.post('/:id/face', auth, staff, async function (req, res) {
+    try {
+        const db = req.app.get('db');
+        const studentId = req.params.id;
+
+        const student = await db.prepare('SELECT * FROM students WHERE id = ?').get(studentId);
+        if (!student) {
+            return res.status(404).json({ error: 'Student not found.' });
+        }
+
+        // Teacher isolation: teachers may only enroll their own students
+        if (req.user.role === 'teacher' && student.teacher_id && student.teacher_id !== req.user.id) {
+            return res.status(403).json({ error: 'Forbidden: You cannot enroll biometric data for a student in another adviser\'s roster.' });
+        }
+
+        const { face_descriptor } = req.body;
+        if (!face_descriptor || !Array.isArray(face_descriptor) || face_descriptor.length < 68) {
+            return res.status(400).json({ error: 'Invalid facial biometric descriptor. Must be an array of at least 68 float values.' });
+        }
+
+        const serialized = JSON.stringify(face_descriptor);
+        await db.prepare('UPDATE students SET face_descriptor = ? WHERE id = ?').run(serialized, studentId);
+
+        try {
+            await logActivity(db, {
+                role: req.user.role,
+                userName: req.user.username,
+                actionType: 'biometric_enrollment',
+                actionTitle: `Student Face Enrolled: ${student.full_name}`,
+                details: `Registered facial biometric profile for student ${student.full_name} (LRN: ${student.lrn || 'N/A'}).`,
+                targetName: student.full_name
+            });
+        } catch (logErr) {}
+
+        res.json({ message: `Facial recognition profile enrolled successfully for ${student.full_name}.` });
+    } catch (error) {
+        console.error('Student face enroll error:', error.message);
+        res.status(500).json({ error: 'Server error during student biometric enrollment.' });
+    }
+});
+
+// DELETE /api/students/:id/face  — Clear a student's facial descriptor
+router.delete('/:id/face', auth, staff, async function (req, res) {
+    try {
+        const db = req.app.get('db');
+        const studentId = req.params.id;
+
+        const student = await db.prepare('SELECT * FROM students WHERE id = ?').get(studentId);
+        if (!student) {
+            return res.status(404).json({ error: 'Student not found.' });
+        }
+
+        // Teacher isolation: teachers may only clear their own students' biometrics
+        if (req.user.role === 'teacher' && student.teacher_id && student.teacher_id !== req.user.id) {
+            return res.status(403).json({ error: 'Forbidden: You cannot modify biometric data for a student in another adviser\'s roster.' });
+        }
+
+        await db.prepare('UPDATE students SET face_descriptor = NULL WHERE id = ?').run(studentId);
+
+        try {
+            await logActivity(db, {
+                role: req.user.role,
+                userName: req.user.username,
+                actionType: 'biometric_enrollment',
+                actionTitle: `Student Face Profile Cleared: ${student.full_name}`,
+                details: `Removed facial biometric profile for student ${student.full_name}.`,
+                targetName: student.full_name
+            });
+        } catch (logErr) {}
+
+        res.json({ message: `Facial recognition profile cleared for ${student.full_name}.` });
+    } catch (error) {
+        console.error('Student face clear error:', error.message);
+        res.status(500).json({ error: 'Server error clearing student biometric profile.' });
     }
 });
 

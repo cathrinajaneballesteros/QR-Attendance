@@ -3,6 +3,19 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const { notify } = require('../services/notifications');
 
+// Euclidean distance between two 128-float face descriptor vectors
+function computeFaceDistance(descA, descB) {
+  if (!descA || !descB || descA.length !== descB.length) return Infinity;
+  let sum = 0;
+  for (let i = 0; i < descA.length; i++) {
+    const d = descA[i] - descB[i];
+    sum += d * d;
+  }
+  return Math.sqrt(sum);
+}
+
+const FACE_MATCH_THRESHOLD = 0.52;
+
 function staff(req, res, next) {
   if (!['admin', 'teacher'].includes(req.user.role)) {
     return res.status(403).json({ error: 'Teacher or admin account required' });
@@ -90,7 +103,7 @@ async function checkPolicy(db, body, qr = false) {
   return null;
 }
 
-async function record(db, student, who, location) {
+async function record(db, student, who, location, faceVerified = 0) {
   const settings = await getSettingsMap(db);
 
   // Requirement 11: Only officially enrolled students can do attendance
@@ -113,7 +126,8 @@ async function record(db, student, who, location) {
       time_in: existing.time_in,
       status: existing.status,
       display_status: existing.status === 'present' ? 'On Time' : (existing.status === 'late' ? 'Late' : 'Absent'),
-      room: existing.room || settings.room_name || 'Room 101'
+      room: existing.room || settings.room_name || 'Room 101',
+      face_verified: existing.face_verified || 0
     };
   }
 
@@ -121,7 +135,7 @@ async function record(db, student, who, location) {
   const room = settings.room_name || 'Room 101 - Grade 6 Great Geniuses';
 
   await db.prepare(
-    'INSERT INTO attendance (student_id, date, time_in, status, recorded_by, latitude, longitude, room) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO attendance (student_id, date, time_in, status, recorded_by, latitude, longitude, room, face_verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     student.id,
     now.date,
@@ -130,7 +144,8 @@ async function record(db, student, who, location) {
     who,
     location.latitude || null,
     location.longitude || null,
-    room
+    room,
+    faceVerified
   );
 
   if (status === 'late') {
@@ -144,11 +159,12 @@ async function record(db, student, who, location) {
   try {
     const { logActivity } = require('../services/activityLogger');
     const role = who === 'admin' ? 'admin' : 'teacher';
+    const faceNote = faceVerified ? ' [Face Verified ✓]' : (student.face_descriptor ? ' [Face Not Verified]' : ' [No Face Profile]');
     await logActivity(db, {
       role: role,
       userName: who,
       actionType: 'attendance_record',
-      actionTitle: `Attendance Recorded: ${status.toUpperCase()}`,
+      actionTitle: `Attendance Recorded: ${status.toUpperCase()}${faceNote}`,
       details: `${student.full_name} checked in ${status} at ${now.display} on ${now.date} (${room}).`,
       targetName: student.full_name
     });
@@ -160,7 +176,8 @@ async function record(db, student, who, location) {
     date: now.date,
     status,
     display_status: status === 'present' ? 'On Time' : 'Late',
-    room
+    room,
+    face_verified: faceVerified
   };
 }
 
@@ -187,14 +204,76 @@ router.post('/scan', auth, staff, async (req, res) => {
       if (!student) return res.status(404).json({ error: 'Learner not found in class database.' });
     }
 
-    const result = await record(db, student, req.user.username, req.body);
+    // ── Biometric Anti-Proxy Face Verification ──────────────────────────────
+    const settings = await getSettingsMap(db);
+    const faceVerificationPolicy = settings.student_face_verification || '1';
+    const incomingDescriptor = req.body.faceDescriptor;
+    let faceVerified = 0;
+    let faceNotEnrolled = false;
+
+    if (faceVerificationPolicy !== '0') {
+      if (student.face_descriptor) {
+        // Student has an enrolled face profile — MUST match
+        if (!incomingDescriptor || !Array.isArray(incomingDescriptor) || incomingDescriptor.length < 68) {
+          // No face descriptor provided by scanner; in strict mode, reject entirely
+          if (faceVerificationPolicy === 'strict') {
+            return res.status(403).json({
+              error: `Biometric verification required: ${student.full_name} has facial recognition enabled. The scanner must verify the student's face before recording attendance.`,
+              face_required: true
+            });
+          }
+          // Standard mode: allow but mark as unverified
+          faceVerified = 0;
+        } else {
+          try {
+            const storedDesc = JSON.parse(student.face_descriptor);
+            const distance = computeFaceDistance(incomingDescriptor, storedDesc);
+
+            if (distance > FACE_MATCH_THRESHOLD) {
+              // FACE MISMATCH — anti-proxy block
+              try {
+                const { logActivity } = require('../services/activityLogger');
+                await logActivity(db, {
+                  role: req.user.role,
+                  userName: req.user.username,
+                  actionType: 'security_alert',
+                  actionTitle: `⚠️ Proxy Attendance Blocked: ${student.full_name}`,
+                  details: `Face mismatch detected. Distance: ${distance.toFixed(3)} (threshold: ${FACE_MATCH_THRESHOLD}). Proxy attempt rejected.`,
+                  targetName: student.full_name
+                });
+              } catch (logErr) {}
+
+              return res.status(403).json({
+                error: `Biometric Security Alert: The face in view does not match the registered profile for ${student.full_name}. Proxy attendance is not allowed.`,
+                face_mismatch: true,
+                student: student.full_name,
+                confidence: (Math.max(0, 1 - distance) * 100).toFixed(1) + '%'
+              });
+            }
+
+            faceVerified = 1;
+          } catch (parseErr) {
+            console.warn('Error parsing student face descriptor:', parseErr.message);
+            faceVerified = 0;
+          }
+        }
+      } else {
+        // Student does not have an enrolled face — allow but note no profile
+        faceNotEnrolled = true;
+        faceVerified = 0;
+      }
+    }
+    // ── End Face Verification ────────────────────────────────────────────────
+
+    const result = await record(db, student, req.user.username, req.body, faceVerified);
     if (result.blocked) {
       return res.status(403).json({ error: result.error, blocked: true, student: result.student });
     }
 
     res.json(Object.assign({
       message: result.duplicate ? 'Already recorded today' : 'Attendance recorded',
-      duplicate: !!result.duplicate
+      duplicate: !!result.duplicate,
+      face_not_enrolled: faceNotEnrolled
     }, result));
   } catch (err) {
     console.error('Scan attendance error:', err.message);

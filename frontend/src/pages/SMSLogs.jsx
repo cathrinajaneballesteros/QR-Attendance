@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { apiFetch } from '../utils/api';
 import StatCard from '../components/StatCard';
 import { 
@@ -15,6 +16,7 @@ import {
 export default function SMSLogs() {
   const [logs, setLogs] = useState([]);
   const [students, setStudents] = useState([]);
+  const [smsStatus, setSmsStatus] = useState(null);
   const [selectedStudent, setSelectedStudent] = useState('');
   const [msgType, setMsgType] = useState('arrived');
   const [customMsg, setCustomMsg] = useState('');
@@ -27,9 +29,10 @@ export default function SMSLogs() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [logsRes, studentsRes] = await Promise.all([
+      const [logsRes, studentsRes, statusRes] = await Promise.all([
         apiFetch('/api/sms/logs'),
-        apiFetch('/api/students')
+        apiFetch('/api/students'),
+        apiFetch('/api/sms/status')
       ]);
 
       if (logsRes.ok) {
@@ -39,6 +42,10 @@ export default function SMSLogs() {
       if (studentsRes.ok) {
         const studentsData = await studentsRes.json();
         setStudents(studentsData);
+      }
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        setSmsStatus(statusData);
       }
     } catch (err) {
       console.error('Failed to load SMS data:', err);
@@ -53,7 +60,7 @@ export default function SMSLogs() {
 
   const showAlert = (message, type = 'success') => {
     setAlert({ message, type });
-    setTimeout(() => setAlert(null), 4000);
+    setTimeout(() => setAlert(null), 5000);
   };
 
   const handleSendSMS = async (e) => {
@@ -97,7 +104,11 @@ export default function SMSLogs() {
 
       const data = await response.json();
       if (response.ok) {
-        showAlert(`SMS notification sent to ${data.contact || 'guardian'} for ${studentName}!`);
+        if (data.isMock) {
+          showAlert(`Simulated SMS logged for ${studentName} (${data.contact}). Note: To receive SMS on actual phones, enable Live Gateway in Settings.`, 'warning');
+        } else {
+          showAlert(`Real SMS notification sent to ${data.contact} for ${studentName} via ${data.provider === 'android' ? 'Android Phone SIM' : (data.provider || 'gateway').toUpperCase()}!`, 'success');
+        }
         setCustomMsg('');
         loadData();
       } else {
@@ -113,6 +124,7 @@ export default function SMSLogs() {
   // Stats calculation
   const totalSMS = logs.length;
   const sentCount = logs.filter(l => l.status === 'sent').length;
+  const mockCount = logs.filter(l => l.status === 'mock_sent').length;
   const noContactCount = logs.filter(l => l.status === 'no_contact').length;
   const todayKey = new Date().toISOString().split('T')[0];
   const todayCount = logs.filter(l => (l.created_at || '').includes(todayKey)).length;
@@ -129,31 +141,62 @@ export default function SMSLogs() {
 
   return (
     <div>
+      {/* Simulation / Not Configured Notice */}
+      {smsStatus && (!smsStatus.has_api_key || smsStatus.provider === 'mock') && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          background: '#fffbeb',
+          border: '1px solid #fde68a',
+          padding: '12px 18px',
+          borderRadius: '12px',
+          marginBottom: '20px',
+          flexWrap: 'wrap'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <AlertCircle size={22} color="#d97706" style={{ flexShrink: 0 }} />
+            <div>
+              <strong style={{ fontSize: '0.86rem', color: '#166534' }}>
+                SMS Gateway is in Simulation (Mock) Mode
+              </strong>
+              <div style={{ fontSize: '0.78rem', color: '#15803d', marginTop: '2px' }}>
+                Messages are simulated locally. To send 100% free real SMS to actual mobile phones without paying any fees, connect your Android Phone in Settings.
+              </div>
+            </div>
+          </div>
+          <Link to="/settings" className="btn btn-secondary btn-sm" style={{ whiteSpace: 'nowrap', borderColor: '#16a34a', color: '#166534', background: '#fff' }}>
+            Configure Android Phone (Free)
+          </Link>
+        </div>
+      )}
+
       {/* Stats Counter */}
       <div className="stats-grid">
         <StatCard
-          label="Total SMS Sent"
+          label="Total SMS Logs"
           value={totalSMS}
           icon={<MessageSquare size={24} />}
           color="#880e4f"
         />
         <StatCard
-          label="Successfully Delivered"
+          label="Live Delivered"
           value={sentCount}
           icon={<CheckCircle size={24} />}
           color="#16a34a"
+        />
+        <StatCard
+          label="Simulated (Mock)"
+          value={mockCount}
+          icon={<Clock size={24} />}
+          color="#64748b"
         />
         <StatCard
           label="Missing Mobile"
           value={noContactCount}
           icon={<PhoneOff size={24} />}
           color="#d97706"
-        />
-        <StatCard
-          label="Sent Today"
-          value={todayCount}
-          icon={<Clock size={24} />}
-          color="#0284c7"
         />
       </div>
 
@@ -168,65 +211,69 @@ export default function SMSLogs() {
         </div>
 
         {alert && (
-          <div className={`alert ${alert.type === 'error' ? 'alert-error' : 'alert-success'}`}>
-            {alert.type === 'error' ? <AlertCircle size={16} /> : <CheckCircle size={16} />}
-            <span>{alert.message}</span>
+          <div className={`alert alert-${alert.type === 'error' ? 'danger' : alert.type === 'warning' ? 'warning' : 'success'}`} style={{ marginBottom: '16px' }}>
+            {alert.type === 'error' ? <AlertCircle size={18} /> : alert.type === 'warning' ? <AlertCircle size={18} /> : <CheckCircle size={18} />}
+            <div>{alert.message}</div>
           </div>
         )}
 
         <form onSubmit={handleSendSMS}>
           <div className="form-grid">
             <div className="form-group">
-              <label className="form-label">Select Learner</label>
+              <label className="form-label">Select Student</label>
               <select
                 className="form-select"
                 value={selectedStudent}
                 onChange={(e) => setSelectedStudent(e.target.value)}
                 required
               >
-                <option value="">-- Choose Learner --</option>
+                <option value="">-- Choose a Learner --</option>
                 {students.map(s => (
                   <option key={s.id} value={s.id}>
-                    {s.full_name} ({s.guardian_contact || 'No phone'})
+                    {s.full_name} ({s.sex}) — {s.student_phone || s.guardian_contact || 'No Phone'}
                   </option>
                 ))}
               </select>
             </div>
 
             <div className="form-group">
-              <label className="form-label">Notice Template</label>
+              <label className="form-label">Notification Type</label>
               <select
                 className="form-select"
                 value={msgType}
                 onChange={(e) => setMsgType(e.target.value)}
               >
-                <option value="arrived">✅ Learner Arrived at School</option>
-                <option value="absent">⚠️ Learner is Absent Today</option>
-                <option value="late">⏰ Learner Arrived Late</option>
-                <option value="dismissed">🚪 Early Dismissal Notice</option>
-                <option value="meeting">📅 Parent-Teacher Meeting Reminder</option>
-                <option value="custom">✏️ Custom Custom Message...</option>
+                <option value="arrived">Arrival Confirmation</option>
+                <option value="absent">Absence Advisory</option>
+                <option value="late">Tardy / Late Warning</option>
+                <option value="dismissed">Early Dismissal Notification</option>
+                <option value="meeting">Parent-Teacher Meeting Notice</option>
+                <option value="custom">Custom Message</option>
               </select>
             </div>
           </div>
 
           {msgType === 'custom' && (
-            <div className="form-group">
+            <div className="form-group" style={{ marginTop: '12px' }}>
               <label className="form-label">Custom Message Content</label>
-              <input
-                type="text"
+              <textarea
                 className="form-input"
-                placeholder="Type your custom SMS alert to the guardian..."
+                rows="3"
                 value={customMsg}
                 onChange={(e) => setCustomMsg(e.target.value)}
-                required
+                placeholder="Type your custom SMS alert to the guardian..."
               />
             </div>
           )}
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-            <button type="submit" className="btn btn-primary" disabled={sending}>
-              <Send size={15} />
+          <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={sending}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+            >
+              <Send size={16} />
               <span>{sending ? 'Sending SMS...' : 'Send SMS Notification'}</span>
             </button>
           </div>
@@ -235,7 +282,7 @@ export default function SMSLogs() {
 
       {/* SMS Logs Table */}
       <div className="card">
-        <div className="card-header">
+        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
           <div>
             <h3 className="card-title">
               <MessageSquare size={20} />
@@ -269,7 +316,8 @@ export default function SMSLogs() {
             onChange={(e) => setStatusFilter(e.target.value)}
           >
             <option value="all">All Delivery Statuses</option>
-            <option value="sent">Sent</option>
+            <option value="sent">Live Sent</option>
+            <option value="mock_sent">Simulated (Mock)</option>
             <option value="no_contact">No Contact</option>
             <option value="failed">Failed</option>
           </select>
@@ -306,14 +354,19 @@ export default function SMSLogs() {
                       {log.message}
                     </td>
                     <td>
-                      <span className={`badge ${
-                        log.status === 'sent' 
-                          ? 'badge-submitted' 
-                          : log.status === 'no_contact' 
-                          ? 'badge-pending' 
-                          : 'badge-rejected'
-                      }`}>
-                        {log.status === 'sent' ? 'Sent' : log.status === 'no_contact' ? 'No Contact' : 'Failed'}
+                      <span 
+                        className={`badge ${
+                          log.status === 'sent' 
+                            ? 'badge-submitted' 
+                            : log.status === 'mock_sent'
+                            ? 'badge-pending'
+                            : log.status === 'no_contact' 
+                            ? 'badge-pending' 
+                            : 'badge-rejected'
+                        }`}
+                        style={log.status === 'mock_sent' ? { background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' } : {}}
+                      >
+                        {log.status === 'sent' ? 'Live Sent' : log.status === 'mock_sent' ? 'Simulated' : log.status === 'no_contact' ? 'No Mobile' : 'Failed'}
                       </span>
                     </td>
                     <td style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>

@@ -20,8 +20,10 @@ import {
   X,
   FileSpreadsheet,
   UploadCloud,
-  RefreshCw
+  RefreshCw,
+  Camera
 } from 'lucide-react';
+import StudentFaceScannerModal from '../components/StudentFaceScannerModal';
 
 export default function Students() {
   const [students, setStudents] = useState([]);
@@ -35,6 +37,7 @@ export default function Students() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editStudent, setEditStudent] = useState(null);
   const [isBatchOpen, setIsBatchOpen] = useState(false);
+  const [faceModalStudent, setFaceModalStudent] = useState(null);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -331,7 +334,25 @@ export default function Students() {
     }
   };
 
-  // Batch Roster Submit (Requirement 10)
+  const handleClearFace = async (student) => {
+    if (!window.confirm(`Are you sure you want to remove the facial biometric profile for ${student.full_name}?`)) {
+      return;
+    }
+    try {
+      const res = await apiFetch(`/api/students/${student.id}/face`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showAlert(data.message || `Facial profile cleared for ${student.full_name}`);
+        loadStudents();
+      } else {
+        showAlert(data.error || 'Failed to clear facial profile', 'error');
+      }
+    } catch (e) {
+      showAlert('Network error clearing facial profile', 'error');
+    }
+  };
   const handleBatchSubmit = async (e) => {
     e.preventDefault();
     const lines = batchData.namesText
@@ -619,6 +640,7 @@ export default function Students() {
                 <th style={{ width: '60px' }}>Sex</th>
                 <th style={{ width: '150px' }}>QR Code ID</th>
                 <th style={{ width: '160px' }}>Enrollment Status</th>
+                <th style={{ width: '135px', textAlign: 'center' }}>Face ID</th>
                 <th>Guardian Contact</th>
                 <th style={{ width: '120px', textAlign: 'center' }}>Actions</th>
               </tr>
@@ -626,7 +648,7 @@ export default function Students() {
             <tbody>
               {filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                  <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                     {search ? 'No matching students found.' : 'No students found in the database.'}
                   </td>
                 </tr>
@@ -696,6 +718,68 @@ export default function Students() {
                             </span>
                           )}
                         </button>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {s.has_face_profile ? (
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <button
+                              type="button"
+                              onClick={() => setFaceModalStudent(s)}
+                              className="btn btn-sm"
+                              style={{
+                                padding: '3px 8px',
+                                fontSize: '0.72rem',
+                                background: 'rgba(16, 185, 129, 0.15)',
+                                color: '#10b981',
+                                border: '1px solid rgba(16, 185, 129, 0.3)',
+                                borderRadius: '12px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                cursor: 'pointer'
+                              }}
+                              title="Face biometric enrolled. Click to re-scan/update."
+                            >
+                              <ShieldCheck size={12} />
+                              <span>Enrolled</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleClearFace(s)}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#94a3b8',
+                                cursor: 'pointer',
+                                padding: '2px',
+                                display: 'inline-flex',
+                                alignItems: 'center'
+                              }}
+                              title="Clear face biometric data"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setFaceModalStudent(s)}
+                            className="btn btn-sm btn-secondary"
+                            style={{
+                              padding: '3px 8px',
+                              fontSize: '0.72rem',
+                              borderRadius: '12px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              cursor: 'pointer'
+                            }}
+                            title="Register face biometric for this student"
+                          >
+                            <Camera size={12} />
+                            <span>Register Face</span>
+                          </button>
+                        )}
                       </td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1226,6 +1310,18 @@ export default function Students() {
           </div>
         </div>
       </Modal>
+
+      {/* Student Face Biometric Scanner Modal */}
+      <StudentFaceScannerModal
+        isOpen={!!faceModalStudent}
+        student={faceModalStudent}
+        onClose={() => setFaceModalStudent(null)}
+        onSuccess={() => {
+          showAlert(`Face profile enrolled successfully for ${faceModalStudent?.full_name}!`);
+          setFaceModalStudent(null);
+          loadStudents();
+        }}
+      />
     </div>
   );
 }
