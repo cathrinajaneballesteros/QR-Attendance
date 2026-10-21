@@ -118,7 +118,8 @@ router.post('/send', auth, staff, async (req, res) => {
             twilioPhoneNumber
         });
 
-        const logStatus = result.status === 'sent' ? 'sent' : (result.status === 'queued' ? 'queued' : 'failed');
+        const isLiveSuccess = result.status === 'sent' || (result.status === 'queued' && provider !== 'mock' && result.data);
+        const logStatus = isLiveSuccess ? 'sent' : (result.status === 'queued' ? 'queued' : 'failed');
         const targetNumber = result.contact || formatPhilippineNumber(phone) || phone;
 
         await db.prepare('INSERT INTO sms_logs (student_id, guardian_contact, message, status) VALUES (?, ?, ?, ?)').run(id, targetNumber, message, logStatus);
@@ -224,23 +225,128 @@ router.post('/test', auth, adminOnly, async (req, res) => {
 });
 
 /**
- * Fetch SMS history logs
+ * Fetch SMS history logs with optional date filter and teacher scoping
  */
 router.get('/logs', auth, staff, async (req, res) => {
     try {
-        let sql = 'SELECT l.*, s.full_name FROM sms_logs l JOIN students s ON s.id = l.student_id';
+        const db = req.app.get('db');
+        let sql = 'SELECT l.*, s.full_name FROM sms_logs l LEFT JOIN students s ON s.id = l.student_id';
         const params = [];
+        const conditions = [];
+
         if (req.user.role === 'teacher') {
-            sql += ' WHERE s.teacher_id = ?';
+            conditions.push('s.teacher_id = ?');
             params.push(req.user.id);
         }
-        sql += ' ORDER BY l.created_at DESC LIMIT 200';
 
-        const rows = (await req.app.get('db').prepare(sql).all(...params)) || [];
+        if (req.query.date) {
+            const dateStr = String(req.query.date).trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                conditions.push('(l.created_at >= ? AND l.created_at <= ?)');
+                params.push(`${dateStr} 00:00:00`, `${dateStr} 23:59:59`);
+            }
+        }
+
+        if (conditions.length > 0) {
+            sql += ' WHERE ' + conditions.join(' AND ');
+        }
+
+        sql += ' ORDER BY l.created_at DESC, l.id DESC LIMIT 500';
+
+        const rows = (await db.prepare(sql).all(...params)) || [];
         res.json(rows);
     } catch (e) {
         console.error('SMS logs error:', e.message);
         res.status(500).json({ error: 'Server error' });
+    }
+});
+
+/**
+ * Bulk delete selected SMS logs
+ */
+router.delete('/logs', auth, staff, async (req, res) => {
+    try {
+        const db = req.app.get('db');
+        const ids = req.body.ids;
+
+        const validIds = (Array.isArray(ids) ? ids : [ids])
+            .map(id => parseInt(id, 10))
+            .filter(id => !isNaN(id) && id > 0);
+
+        if (validIds.length === 0) {
+            return res.status(400).json({ error: 'No valid log IDs selected for deletion' });
+        }
+
+        const placeholders = validIds.map(() => '?').join(',');
+        let sql = `DELETE FROM sms_logs WHERE id IN (${placeholders})`;
+        const params = [...validIds];
+
+        // Teachers can only delete logs belonging to students in their assigned section
+        if (req.user.role === 'teacher') {
+            sql += ' AND student_id IN (SELECT id FROM students WHERE teacher_id = ?)';
+            params.push(req.user.id);
+        }
+
+        await db.prepare(sql).run(...params);
+
+        try {
+            const { logActivity } = require('../services/activityLogger');
+            await logActivity(db, {
+                role: req.user?.role || 'teacher',
+                userName: req.user?.username || 'teacher',
+                actionType: 'sms_delete',
+                actionTitle: 'Deleted SMS Notification Logs',
+                details: `Deleted ${validIds.length} SMS notification log record(s).`
+            });
+        } catch (logErr) {}
+
+        res.json({
+            success: true,
+            message: `Successfully deleted ${validIds.length} SMS log record(s)`,
+            deletedCount: validIds.length
+        });
+    } catch (e) {
+        console.error('Delete SMS logs error:', e.message);
+        res.status(500).json({ error: 'Failed to delete SMS logs: ' + e.message });
+    }
+});
+
+/**
+ * Delete a single SMS log by ID
+ */
+router.delete('/logs/:id', auth, staff, async (req, res) => {
+    try {
+        const db = req.app.get('db');
+        const logId = parseInt(req.params.id, 10);
+        if (isNaN(logId) || logId <= 0) {
+            return res.status(400).json({ error: 'Invalid log ID' });
+        }
+
+        let sql = 'DELETE FROM sms_logs WHERE id = ?';
+        const params = [logId];
+
+        if (req.user.role === 'teacher') {
+            sql += ' AND student_id IN (SELECT id FROM students WHERE teacher_id = ?)';
+            params.push(req.user.id);
+        }
+
+        await db.prepare(sql).run(...params);
+
+        try {
+            const { logActivity } = require('../services/activityLogger');
+            await logActivity(db, {
+                role: req.user?.role || 'teacher',
+                userName: req.user?.username || 'teacher',
+                actionType: 'sms_delete',
+                actionTitle: 'Deleted SMS Notification Log',
+                details: `Deleted SMS log record #${logId}.`
+            });
+        } catch (logErr) {}
+
+        res.json({ success: true, message: 'SMS log deleted successfully' });
+    } catch (e) {
+        console.error('Delete SMS log error:', e.message);
+        res.status(500).json({ error: 'Failed to delete SMS log: ' + e.message });
     }
 });
 

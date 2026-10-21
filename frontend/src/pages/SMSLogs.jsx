@@ -18,7 +18,10 @@ import {
   Search, 
   RefreshCw, 
   PhoneOff, 
-  Clock 
+  Clock,
+  Calendar,
+  Trash2,
+  X 
 } from 'lucide-react';
 
 export default function SMSLogs() {
@@ -30,15 +33,19 @@ export default function SMSLogs() {
   const [customMsg, setCustomMsg] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [deleting, setDeleting] = useState(false);
   const [alert, setAlert] = useState(null);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const loadData = async () => {
+  const loadData = async (targetDate = dateFilter) => {
     setLoading(true);
     try {
+      const logsUrl = targetDate ? `/api/sms/logs?date=${encodeURIComponent(targetDate)}` : '/api/sms/logs';
       const [logsRes, studentsRes, statusRes] = await Promise.all([
-        apiFetch('/api/sms/logs'),
+        apiFetch(logsUrl),
         apiFetch('/api/students'),
         apiFetch('/api/sms/status')
       ]);
@@ -65,6 +72,86 @@ export default function SMSLogs() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleDateChange = (newDate) => {
+    setDateFilter(newDate);
+    setSelectedIds([]);
+    loadData(newDate);
+  };
+
+  const handleClearDate = () => {
+    setDateFilter('');
+    setSelectedIds([]);
+    loadData('');
+  };
+
+  const handleToggleSelect = (id) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    const visibleIds = filteredLogs.map(l => l.id).filter(Boolean);
+    if (visibleIds.length === 0) return;
+    const allSelected = visibleIds.every(id => selectedIds.includes(id));
+    if (allSelected) {
+      setSelectedIds(prev => prev.filter(id => !visibleIds.includes(id)));
+    } else {
+      setSelectedIds(prev => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0) {
+      showAlert('Please select at least one SMS log to delete.', 'warning');
+      return;
+    }
+    const count = selectedIds.length;
+    if (!window.confirm(`Are you sure you want to delete ${count} selected SMS log${count > 1 ? 's' : ''}? This action cannot be undone.`)) {
+      return;
+    }
+
+    setDeleting(true);
+    try {
+      const res = await apiFetch('/api/sms/logs', {
+        method: 'DELETE',
+        body: JSON.stringify({ ids: selectedIds })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showAlert(`Successfully deleted ${count} SMS log${count > 1 ? 's' : ''}.`, 'success');
+        setSelectedIds([]);
+        loadData();
+      } else {
+        showAlert(data.error || 'Failed to delete selected SMS logs.', 'error');
+      }
+    } catch (err) {
+      showAlert('Network error deleting SMS logs.', 'error');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteSingle = async (id, e) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm('Are you sure you want to delete this SMS log?')) return;
+    try {
+      const res = await apiFetch(`/api/sms/logs/${id}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showAlert('SMS log deleted.', 'success');
+        setSelectedIds(prev => prev.filter(x => x !== id));
+        loadData();
+      } else {
+        showAlert(data.error || 'Failed to delete SMS log.', 'error');
+      }
+    } catch (err) {
+      showAlert('Network error deleting SMS log.', 'error');
+    }
+  };
 
   const showAlert = (message, type = 'success') => {
     setAlert({ message, type });
@@ -147,7 +234,11 @@ export default function SMSLogs() {
     const matchesStatus = statusFilter === 'all' 
       || l.status === statusFilter 
       || (statusFilter === 'queued' && (l.status === 'queued' || l.status === 'mock_sent'));
-    return matchesSearch && matchesStatus;
+
+    const logDate = (l.created_at || '').substring(0, 10);
+    const matchesDate = !dateFilter || logDate === dateFilter;
+
+    return matchesSearch && matchesStatus && matchesDate;
   });
 
   return (
@@ -356,14 +447,16 @@ export default function SMSLogs() {
             </h3>
             <p className="card-subtitle">Complete history of text notifications</p>
           </div>
-          <button className="btn btn-secondary btn-sm" onClick={loadData}>
+          <button className="btn btn-secondary btn-sm" onClick={() => loadData()}>
             <RefreshCw size={14} />
             <span>Refresh Logs</span>
           </button>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: '220px', position: 'relative' }}>
+        {/* Filter Controls Bar */}
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Search Input */}
+          <div style={{ flex: '1 1 240px', minWidth: '220px', position: 'relative' }}>
             <input
               type="text"
               className="form-input"
@@ -375,6 +468,7 @@ export default function SMSLogs() {
             <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           </div>
 
+          {/* Delivery Status Filter */}
           <select
             className="form-select"
             style={{ width: 'auto', minWidth: '150px' }}
@@ -387,59 +481,206 @@ export default function SMSLogs() {
             <option value="no_contact">Missing Contact</option>
             <option value="failed">Failed</option>
           </select>
+
+          {/* Filter by Date */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <input
+                type="date"
+                className="form-input"
+                style={{ width: 'auto', minWidth: '150px', paddingLeft: '34px', fontSize: '0.85rem' }}
+                value={dateFilter}
+                onChange={(e) => handleDateChange(e.target.value)}
+                title="Filter by log date"
+              />
+              <Calendar size={15} style={{ position: 'absolute', left: '11px', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+            </div>
+            {dateFilter && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleClearDate}
+                title="Clear date filter"
+                style={{ padding: '6px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.78rem' }}
+              >
+                <X size={13} />
+                <span>Clear Date</span>
+              </button>
+            )}
+          </div>
+
+          {/* Delete Selected Logs Button */}
+          {selectedIds.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={handleDeleteSelected}
+              disabled={deleting}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: '#dc2626',
+                color: '#ffffff',
+                border: '1px solid #dc2626',
+                fontWeight: 600,
+                padding: '7px 14px',
+                borderRadius: '6px',
+                cursor: 'pointer'
+              }}
+            >
+              <Trash2 size={15} />
+              <span>{deleting ? 'Deleting...' : `Delete Selected (${selectedIds.length})`}</span>
+            </button>
+          )}
         </div>
+
+        {/* Selected Items Notice Banner */}
+        {selectedIds.length > 0 && (
+          <div style={{
+            background: '#fff1f2',
+            border: '1px solid #fecdd3',
+            borderRadius: '8px',
+            padding: '8px 14px',
+            marginBottom: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '8px',
+            fontSize: '0.84rem',
+            color: '#9f1239'
+          }}>
+            <span>
+              <strong>{selectedIds.length}</strong> log record{selectedIds.length > 1 ? 's' : ''} selected
+            </span>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setSelectedIds([])}
+                style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+              >
+                Deselect All
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={handleDeleteSelected}
+                disabled={deleting}
+                style={{
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  border: '1px solid #dc2626',
+                  padding: '4px 12px',
+                  fontSize: '0.75rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px'
+                }}
+              >
+                <Trash2 size={13} />
+                <span>{deleting ? 'Deleting...' : 'Delete Selected'}</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="table-responsive">
           <table>
             <thead>
               <tr>
+                <th style={{ width: '38px', textAlign: 'center' }}>
+                  <input
+                    type="checkbox"
+                    checked={filteredLogs.length > 0 && filteredLogs.every(l => selectedIds.includes(l.id))}
+                    onChange={handleToggleSelectAll}
+                    title="Select/Deselect all visible logs"
+                    style={{ cursor: 'pointer', width: '15px', height: '15px' }}
+                  />
+                </th>
                 <th style={{ width: '45px' }}>No.</th>
                 <th>Learner</th>
                 <th style={{ width: '130px' }}>Contact</th>
                 <th>Message Content</th>
                 <th style={{ width: '110px' }}>Status</th>
                 <th style={{ width: '150px' }}>Date / Time</th>
+                <th style={{ width: '60px', textAlign: 'center' }}>Action</th>
               </tr>
             </thead>
             <tbody>
               {filteredLogs.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-                    No SMS logs found. Logs will appear automatically when attendance is scanned.
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                    {dateFilter ? `No SMS logs found for date ${dateFilter}.` : 'No SMS logs found. Logs will appear automatically when attendance is scanned.'}
                   </td>
                 </tr>
               ) : (
-                filteredLogs.map((log, index) => (
-                  <tr key={log.id || index}>
-                    <td>{index + 1}</td>
-                    <td style={{ fontWeight: 700 }}>{log.full_name || 'System / Batch'}</td>
-                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
-                      {log.guardian_contact || 'N/A'}
-                    </td>
-                    <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                      {log.message}
-                    </td>
-                    <td>
-                      <span 
-                        className={`badge ${
-                          log.status === 'sent' 
-                            ? 'badge-submitted' 
-                            : (log.status === 'queued' || log.status === 'mock_sent')
-                            ? 'badge-pending'
-                            : log.status === 'no_contact' 
-                            ? 'badge-pending' 
-                            : 'badge-rejected'
-                        }`}
-                        style={(log.status === 'queued' || log.status === 'mock_sent') ? { background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd' } : {}}
-                      >
-                        {log.status === 'sent' ? 'Live Sent' : (log.status === 'queued' || log.status === 'mock_sent') ? 'Queued' : log.status === 'no_contact' ? 'No Mobile' : 'Failed'}
-                      </span>
-                    </td>
-                    <td style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {log.created_at || '—'}
-                    </td>
-                  </tr>
-                ))
+                filteredLogs.map((log, index) => {
+                  const isSelected = selectedIds.includes(log.id);
+                  return (
+                    <tr key={log.id || index} style={isSelected ? { background: '#fff1f2' } : {}}>
+                      <td style={{ textAlign: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelect(log.id)}
+                          style={{ cursor: 'pointer', width: '15px', height: '15px' }}
+                        />
+                      </td>
+                      <td>{index + 1}</td>
+                      <td style={{ fontWeight: 700 }}>{log.full_name || 'System / Batch'}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
+                        {log.guardian_contact || 'N/A'}
+                      </td>
+                      <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                        {log.message}
+                      </td>
+                      <td>
+                        <span 
+                          className={`badge ${
+                            log.status === 'sent' 
+                              ? 'badge-submitted' 
+                              : (log.status === 'queued' || log.status === 'mock_sent')
+                              ? 'badge-pending'
+                              : log.status === 'no_contact' 
+                              ? 'badge-pending' 
+                              : 'badge-rejected'
+                          }`}
+                          style={(log.status === 'queued' || log.status === 'mock_sent') ? { background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd' } : {}}
+                        >
+                          {log.status === 'sent' ? 'Live Sent' : (log.status === 'queued' || log.status === 'mock_sent') ? 'Queued' : log.status === 'no_contact' ? 'No Mobile' : 'Failed'}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        {log.created_at || '—'}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteSingle(log.id, e)}
+                          title="Delete this SMS log"
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#94a3b8',
+                            cursor: 'pointer',
+                            padding: '4px',
+                            borderRadius: '4px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            transition: 'color 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = '#94a3b8'}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

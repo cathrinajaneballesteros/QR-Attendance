@@ -281,15 +281,19 @@
                 <select id="statusFilter" onchange="filterLogs()">
                     <option value="all">All Status</option>
                     <option value="sent">Sent</option>
+                    <option value="queued">Queued</option>
                     <option value="no_contact">No Contact</option>
                     <option value="failed">Failed</option>
                 </select>
+                <input type="date" id="dateFilter" onchange="filterLogs()" title="Filter by date" style="padding: 9px; border: 2px solid #fce4ec; border-radius: 8px; font-size: 0.9em;">
                 <button onclick="loadLogs()">Refresh</button>
+                <button id="deleteBtn" onclick="deleteSelectedLogs()" style="display:none;background:#c62828;color:white;padding:10px 15px;border:none;border-radius:8px;font-weight:bold;cursor:pointer;">Delete Selected (<span id="selectedCount">0</span>)</button>
             </div>
             <div class="table-wrapper">
                 <table>
                     <thead>
                         <tr>
+                            <th style="width: 35px; text-align: center;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)"></th>
                             <th>No.</th>
                             <th>Student</th>
                             <th>Guardian Contact</th>
@@ -299,7 +303,7 @@
                         </tr>
                     </thead>
                     <tbody id="logsBody">
-                        <tr><td colspan="6" class="no-data">Loading SMS logs...</td></tr>
+                        <tr><td colspan="7" class="no-data">Loading SMS logs...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -340,14 +344,84 @@
             }
         });
 
+        var selectedIds = [];
+
+        function toggleSelectAll(master) {
+            var checks = document.querySelectorAll('.log-check');
+            selectedIds = [];
+            for (var i = 0; i < checks.length; i++) {
+                checks[i].checked = master.checked;
+                if (master.checked) {
+                    selectedIds.push(parseInt(checks[i].value, 10));
+                }
+            }
+            updateDeleteButton();
+        }
+
+        function updateSelection() {
+            var checks = document.querySelectorAll('.log-check');
+            selectedIds = [];
+            var allChecked = checks.length > 0;
+            for (var i = 0; i < checks.length; i++) {
+                if (checks[i].checked) {
+                    selectedIds.push(parseInt(checks[i].value, 10));
+                } else {
+                    allChecked = false;
+                }
+            }
+            var selectAll = document.getElementById('selectAllCheckbox');
+            if (selectAll) selectAll.checked = allChecked;
+            updateDeleteButton();
+        }
+
+        function updateDeleteButton() {
+            var btn = document.getElementById('deleteBtn');
+            var countSpan = document.getElementById('selectedCount');
+            if (!btn) return;
+            if (selectedIds.length > 0) {
+                btn.style.display = 'inline-block';
+                if (countSpan) countSpan.textContent = selectedIds.length;
+            } else {
+                btn.style.display = 'none';
+            }
+        }
+
+        async function deleteSelectedLogs() {
+            if (selectedIds.length === 0) return;
+            if (!confirm('Are you sure you want to delete ' + selectedIds.length + ' selected SMS log(s)?')) return;
+            try {
+                var res = await fetch('/api/sms/logs', {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ ids: selectedIds })
+                });
+                if (res.ok) {
+                    selectedIds = [];
+                    updateDeleteButton();
+                    loadLogs();
+                } else {
+                    var err = await res.json();
+                    alert(err.error || 'Failed to delete SMS logs');
+                }
+            } catch (e) {
+                alert('Network error deleting SMS logs');
+            }
+        }
+
         function filterLogs() {
             var search = document.getElementById('searchInput').value.toLowerCase().trim();
             var statusFilter = document.getElementById('statusFilter').value;
+            var dateFilter = document.getElementById('dateFilter').value;
             var filtered = allLogs;
 
             if (search) {
                 filtered = filtered.filter(function(log) {
-                    return (log.full_name || '').toLowerCase().indexOf(search) !== -1;
+                    return (log.full_name || '').toLowerCase().indexOf(search) !== -1 ||
+                           (log.guardian_contact || '').indexOf(search) !== -1 ||
+                           (log.message || '').toLowerCase().indexOf(search) !== -1;
                 });
             }
             if (statusFilter !== 'all') {
@@ -355,13 +429,23 @@
                     return log.status === statusFilter;
                 });
             }
+            if (dateFilter) {
+                filtered = filtered.filter(function(log) {
+                    return (log.created_at || '').substring(0, 10) === dateFilter;
+                });
+            }
             renderLogs(filtered);
         }
 
         function renderLogs(logs) {
             var tbody = document.getElementById('logsBody');
+            selectedIds = [];
+            updateDeleteButton();
+            var selectAll = document.getElementById('selectAllCheckbox');
+            if (selectAll) selectAll.checked = false;
+
             if (logs.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="no-data">No SMS logs found. Logs will appear when attendance is recorded for students with guardian contacts.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="no-data">No SMS logs found. Logs will appear when attendance is recorded for students with guardian contacts.</td></tr>';
                 return;
             }
             var html = '';
@@ -372,11 +456,15 @@
                 if (log.status === 'sent') {
                     statusClass = 'status-sent';
                     statusText = 'Sent';
+                } else if (log.status === 'queued') {
+                    statusClass = 'status-sent';
+                    statusText = 'Queued';
                 } else if (log.status === 'failed') {
                     statusClass = 'status-failed';
                     statusText = 'Failed';
                 }
                 html += '<tr>';
+                html += '<td style="text-align:center;"><input type="checkbox" class="log-check" value="' + log.id + '" onchange="updateSelection()"></td>';
                 html += '<td>' + (i + 1) + '</td>';
                 html += '<td>' + (log.full_name || 'Unknown') + '</td>';
                 html += '<td>' + (log.guardian_contact || 'N/A') + '</td>';

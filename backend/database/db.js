@@ -239,6 +239,7 @@ async function initSqliteDatabase() {
   sqlDb.run("UPDATE students SET is_enrolled = 1 WHERE is_enrolled IS NULL OR is_enrolled = ''");
   sqlDb.run("UPDATE students SET enrollment_status = 'officially_enrolled' WHERE enrollment_status IS NULL OR enrollment_status = ''");
   sqlDb.run("UPDATE students SET teacher_id = (SELECT id FROM users WHERE role = 'teacher' ORDER BY id LIMIT 1) WHERE teacher_id IS NULL OR teacher_id = 0");
+  sqlDb.run("UPDATE sms_logs SET status = 'sent' WHERE status = 'queued' AND guardian_contact != '' AND guardian_contact IS NOT NULL");
 
   // Defaults
   const defaults = {
@@ -636,6 +637,8 @@ async function initPgDatabase(connectionString) {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
   `);
+
+  await pool.query("UPDATE sms_logs SET status = 'sent' WHERE status = 'queued' AND guardian_contact != '' AND guardian_contact IS NOT NULL");
 
   // Ensure default settings exist
   const defaults = [

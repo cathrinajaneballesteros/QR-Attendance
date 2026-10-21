@@ -119,7 +119,7 @@ function sendPhilSMS(number, message, options = {}) {
         const isSuccess = res.statusCode >= 200 && res.statusCode < 300 && json && (json.status === 'success' || json.code === 'ok' || !json.error);
         if (isSuccess && json?.status !== 'error') {
           resolve({
-            status: 'queued',
+            status: 'sent',
             data: json,
             contact: recipient,
             message: json?.message || 'SMS successfully dispatched via PhilSMS'
@@ -223,10 +223,10 @@ function sendTextBee(number, message, options = {}) {
         const isSuccess = res.statusCode >= 200 && res.statusCode < 300 && (json?.success !== false);
         if (isSuccess) {
           resolve({
-            status: 'queued',
+            status: 'sent',
             data: json?.data || json,
             contact: formattedE164,
-            message: 'SMS successfully queued to your Android phone via TextBee!'
+            message: 'SMS successfully dispatched to recipient phone via TextBee!'
           });
         } else {
           let errorMsg = 'Failed to send SMS via TextBee';
@@ -348,7 +348,7 @@ function sendAndroidGateway(number, message, options = {}) {
 
           if (res.statusCode >= 200 && res.statusCode < 300) {
             resolve({
-              status: 'queued',
+              status: 'sent',
               data: json,
               contact: recipient,
               message: 'SMS successfully sent to Android phone for cellular delivery!'
@@ -461,10 +461,10 @@ function sendTwilio(to, message, options = {}) {
 
         if (res.statusCode >= 200 && res.statusCode < 300 && json && json.sid) {
           resolve({
-            status: 'queued',
+            status: 'sent',
             data: json,
             contact: e164To,
-            message: `SMS successfully queued by Twilio (SID: ${json.sid})`
+            message: `SMS successfully sent via Twilio (SID: ${json.sid})`
           });
         } else {
           let errorMsg = 'Failed to send SMS via Twilio';
@@ -560,10 +560,10 @@ function sendSemaphore(number, message, options = {}) {
         const isSuccess = res.statusCode >= 200 && res.statusCode < 300 && Array.isArray(json) && json.length > 0;
         if (isSuccess) {
           resolve({
-            status: 'queued',
+            status: 'sent',
             data: json[0],
             contact: formattedNumber,
-            message: 'SMS successfully queued by Semaphore gateway'
+            message: 'SMS successfully dispatched via Semaphore gateway'
           });
         } else {
           let errorMsg = 'Failed to send SMS';
@@ -688,7 +688,7 @@ async function notify(db, student, kind, message, force = false) {
     twilioPhoneNumber: settings.twilio_phone_number || process.env.TWILIO_PHONE_NUMBER
   });
 
-  const logStatus = (result.status === 'queued' || result.status === 'sent') ? 'sent' : 'failed';
+  const logStatus = result.status === 'sent' ? 'sent' : (result.status === 'queued' ? 'queued' : 'failed');
   await db.prepare('INSERT INTO sms_logs (student_id, guardian_contact, message, status) VALUES (?, ?, ?, ?)').run(
     student.id,
     result.contact || phone,
