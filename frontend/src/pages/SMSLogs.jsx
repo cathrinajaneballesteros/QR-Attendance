@@ -508,34 +508,9 @@ export default function SMSLogs() {
               </button>
             )}
           </div>
-
-          {/* Delete Selected Logs Button */}
-          {selectedIds.length > 0 && (
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={handleDeleteSelected}
-              disabled={deleting}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                background: '#dc2626',
-                color: '#ffffff',
-                border: '1px solid #dc2626',
-                fontWeight: 600,
-                padding: '7px 14px',
-                borderRadius: '6px',
-                cursor: 'pointer'
-              }}
-            >
-              <Trash2 size={15} />
-              <span>{deleting ? 'Deleting...' : `Delete Selected (${selectedIds.length})`}</span>
-            </button>
-          )}
         </div>
 
-        {/* Selected Items Notice Banner */}
+        {/* Selected Items Notice Banner with Action Button */}
         {selectedIds.length > 0 && (
           <div style={{
             background: '#fff1f2',
@@ -559,7 +534,7 @@ export default function SMSLogs() {
                 type="button"
                 className="btn btn-secondary btn-sm"
                 onClick={() => setSelectedIds([])}
-                style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+                style={{ padding: '4px 10px', fontSize: '0.78rem' }}
               >
                 Deselect All
               </button>
@@ -572,15 +547,18 @@ export default function SMSLogs() {
                   background: '#dc2626',
                   color: '#ffffff',
                   border: '1px solid #dc2626',
-                  padding: '4px 12px',
-                  fontSize: '0.75rem',
+                  padding: '5px 14px',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '5px'
+                  gap: '6px',
+                  borderRadius: '6px',
+                  cursor: 'pointer'
                 }}
               >
-                <Trash2 size={13} />
-                <span>{deleting ? 'Deleting...' : 'Delete Selected'}</span>
+                <Trash2 size={14} />
+                <span>{deleting ? 'Deleting...' : `Delete Selected (${selectedIds.length})`}</span>
               </button>
             </div>
           </div>
