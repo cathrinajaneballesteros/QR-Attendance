@@ -140,6 +140,125 @@ router.get('/users', auth, async function(req, res) {
     }
 });
 
+// Get currently authenticated user profile
+router.get('/me', auth, async function(req, res) {
+    try {
+        const db = req.app.get('db');
+        const user = await db.prepare('SELECT id, full_name, username, email, role, created_at FROM users WHERE id = ?').get(req.user.id);
+        if (!user) {
+            return res.status(404).json({ error: 'User account not found' });
+        }
+        res.json(user);
+    } catch (error) {
+        console.error('Get profile error:', error.message);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// Update Administrator's own login credentials (username, full_name, email, password)
+router.put('/admin-credentials', auth, async function(req, res) {
+    try {
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Access restricted: Only administrators can update admin credentials.' });
+        }
+
+        const db = req.app.get('db');
+        const adminId = req.user.id;
+
+        const currentAdmin = await db.prepare('SELECT * FROM users WHERE id = ?').get(adminId);
+        if (!currentAdmin) {
+            return res.status(404).json({ error: 'Administrator account not found.' });
+        }
+
+        const { current_password, username, full_name, email, new_password, confirm_password } = req.body;
+
+        if (!current_password) {
+            return res.status(400).json({ error: 'Current password is required to verify your authorization.' });
+        }
+
+        const isCurrentValid = bcrypt.compareSync(current_password, currentAdmin.password);
+        if (!isCurrentValid) {
+            return res.status(401).json({ error: 'Incorrect current password. Credential update denied.' });
+        }
+
+        const newUsername = (username !== undefined ? username : currentAdmin.username || '').trim();
+        const newFullName = (full_name !== undefined ? full_name : currentAdmin.full_name || '').trim();
+        const newEmail = email !== undefined ? (email ? email.trim().toLowerCase() : null) : (currentAdmin.email || null);
+
+        if (!newUsername) {
+            return res.status(400).json({ error: 'Username cannot be blank.' });
+        }
+        if (!newFullName) {
+            return res.status(400).json({ error: 'Full name / display name cannot be blank.' });
+        }
+
+        // Uniqueness check for username / email against other accounts
+        const conflict = await db.prepare(
+            'SELECT id, username, email FROM users WHERE (LOWER(username) = LOWER(?) OR (email IS NOT NULL AND LOWER(email) = LOWER(?))) AND id != ?'
+        ).get(newUsername, newUsername, adminId);
+
+        if (conflict) {
+            return res.status(400).json({ error: 'Another account is already using this username or email address.' });
+        }
+
+        let updatedHashedPassword = currentAdmin.password;
+        let passwordChanged = false;
+
+        if (new_password) {
+            if (new_password.length < 6) {
+                return res.status(400).json({ error: 'New password must be at least 6 characters long.' });
+            }
+            if (confirm_password !== undefined && new_password !== confirm_password) {
+                return res.status(400).json({ error: 'New password and confirmation password do not match.' });
+            }
+            updatedHashedPassword = bcrypt.hashSync(new_password, 10);
+            passwordChanged = true;
+        }
+
+        await db.prepare(
+            'UPDATE users SET username = ?, full_name = ?, email = ?, password = ? WHERE id = ?'
+        ).run(newUsername, newFullName, newEmail, updatedHashedPassword, adminId);
+
+        const updatedAdmin = await db.prepare(
+            'SELECT id, full_name, username, email, role, created_at FROM users WHERE id = ?'
+        ).get(adminId);
+
+        const newToken = jwt.sign(
+            { id: updatedAdmin.id, username: updatedAdmin.username, role: updatedAdmin.role, full_name: updatedAdmin.full_name, student_id: null },
+            JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        try {
+            const { logActivity } = require('../services/activityLogger');
+            await logActivity(db, {
+                role: 'admin',
+                userName: updatedAdmin.username,
+                actionType: 'security_update',
+                actionTitle: 'Admin Log In Credentials Updated',
+                details: `Admin account credentials updated for @${updatedAdmin.username}${passwordChanged ? ' (password changed)' : ''}.`,
+                targetName: updatedAdmin.full_name
+            });
+        } catch (logErr) {}
+
+        res.json({
+            message: 'Admin login credentials updated successfully.',
+            token: newToken,
+            user: {
+                id: updatedAdmin.id,
+                username: updatedAdmin.username,
+                full_name: updatedAdmin.full_name,
+                email: updatedAdmin.email,
+                role: updatedAdmin.role
+            },
+            passwordChanged
+        });
+    } catch (error) {
+        console.error('Update admin credentials error:', error.message);
+        res.status(500).json({ error: 'Server error while updating admin credentials.' });
+    }
+});
+
 router.delete('/users/:id', auth, async function(req, res) {
     try {
         if (req.user.role !== 'admin') {
@@ -148,8 +267,8 @@ router.delete('/users/:id', auth, async function(req, res) {
         const db = req.app.get('db');
         const userId = req.params.id;
         const user = await db.prepare('SELECT full_name, username, role FROM users WHERE id = ?').get(userId);
-        if (user && user.username === 'admin') {
-            return res.status(400).json({ error: 'Cannot delete default admin' });
+        if (user && (user.role === 'admin' || user.username === 'admin' || String(userId) === String(req.user.id))) {
+            return res.status(400).json({ error: 'Administrator accounts cannot be deleted.' });
         }
         if (user && user.role === 'student') {
             return res.status(400).json({ error: 'Student accounts cannot be deleted here. Please manage student accounts in the Student Accounts page.' });

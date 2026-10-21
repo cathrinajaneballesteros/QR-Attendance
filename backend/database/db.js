@@ -274,7 +274,7 @@ async function initSqliteDatabase() {
   }
 
   // Default accounts
-  const admin = sqlDb.exec("SELECT id FROM users WHERE username = 'admin'");
+  const admin = sqlDb.exec("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
   if (!admin.length || !admin[0].values.length) {
     sqlDb.run(
       'INSERT INTO users (full_name, username, password, role) VALUES (?, ?, ?, ?)',
@@ -659,12 +659,22 @@ async function initPgDatabase(connectionString) {
   }
 
   // Ensure default accounts exist
-  await pool.query(`
-    INSERT INTO users (full_name, username, password, role) VALUES
-      ('Administrator', 'admin', '$2a$10$J.kDWnvBMpZJZJETuHwKS.vqUgRP.s7TRasHgQmugQk14Zsg4yYd2', 'admin'),
-      ('Tifanny Martin Aragon', 'teacher', '$2a$10$xeNt6VgpFeO.cC1d8U7y/.fM7LYJ7UhUZhrDr0hDZPqCPITBku9eq', 'teacher')
-    ON CONFLICT (username) DO NOTHING
-  `);
+  const existingAdmin = await pool.query("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
+  if (!existingAdmin.rows || !existingAdmin.rows.length) {
+    await pool.query(`
+      INSERT INTO users (full_name, username, password, role) VALUES
+        ('Administrator', 'admin', '$2a$10$J.kDWnvBMpZJZJETuHwKS.vqUgRP.s7TRasHgQmugQk14Zsg4yYd2', 'admin')
+      ON CONFLICT (username) DO NOTHING
+    `);
+  }
+  const existingTeacher = await pool.query("SELECT id FROM users WHERE role = 'teacher' LIMIT 1");
+  if (!existingTeacher.rows || !existingTeacher.rows.length) {
+    await pool.query(`
+      INSERT INTO users (full_name, username, password, role) VALUES
+        ('Tifanny Martin Aragon', 'teacher', '$2a$10$xeNt6VgpFeO.cC1d8U7y/.fM7LYJ7UhUZhrDr0hDZPqCPITBku9eq', 'teacher')
+      ON CONFLICT (username) DO NOTHING
+    `);
+  }
 
   console.log('Connected to Supabase PostgreSQL database');
   return wrapPgDatabase(pool);

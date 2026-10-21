@@ -166,6 +166,17 @@ export default function Header({ onToggleSidebar }) {
                   </Link>
                 )}
 
+                {isAdmin && (
+                  <Link 
+                    to="/admin/settings?tab=admin_credentials" 
+                    className="sres-dropdown-item"
+                    onClick={() => setDropdownOpen(false)}
+                  >
+                    <KeyRound size={16} strokeWidth={1.8} />
+                    <span>Admin Credentials</span>
+                  </Link>
+                )}
+
                 {isStudent && (
                   <button
                     type="button"

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { apiFetch } from '../utils/api';
 import { 
   UserCheck, 
@@ -8,7 +9,8 @@ import {
   CheckCircle, 
   AlertCircle,
   Camera,
-  Scan
+  Scan,
+  KeyRound
 } from 'lucide-react';
 import TeacherFaceScannerModal from '../components/TeacherFaceScannerModal';
 import { showConfirm, showAlert as showSwalAlert } from '../utils/dialog';
@@ -99,10 +101,11 @@ export default function ManageTeachers() {
   };
 
   const handleDeleteUser = async (id, uname) => {
-    if (uname === 'admin') {
+    const targetUser = users.find(u => String(u.id) === String(id));
+    if (uname === 'admin' || targetUser?.role === 'admin') {
       await showSwalAlert({
         title: 'Action Restricted',
-        text: 'The primary administrator account cannot be deleted.',
+        text: 'Administrator accounts cannot be deleted.',
         icon: 'warning'
       });
       return;
@@ -373,10 +376,33 @@ export default function ManageTeachers() {
                     )}
                   </td>
                   <td style={{ textAlign: 'center' }}>
-                    {u.username === 'admin' ? (
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                        <Shield size={12} style={{ display: 'inline', verticalAlign: '-1px' }} /> Protected
-                      </span>
+                    {u.role === 'admin' || u.username === 'admin' ? (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '0.72rem', color: '#166534', fontWeight: 700, background: '#dcfce7', padding: '2px 6px', borderRadius: '4px' }}>
+                          <Shield size={11} style={{ display: 'inline', verticalAlign: '-1px', marginRight: '2px' }} /> Admin
+                        </span>
+                        <Link
+                          to="/admin/settings?tab=admin_credentials"
+                          className="btn btn-sm"
+                          style={{
+                            background: '#eef2ff',
+                            color: '#3730a3',
+                            border: '1px solid #c7d2fe',
+                            borderRadius: '6px',
+                            padding: '3px 8px',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            textDecoration: 'none'
+                          }}
+                          title="Update administrator login credentials"
+                        >
+                          <KeyRound size={12} />
+                          <span>Edit</span>
+                        </Link>
+                      </div>
                     ) : (
                       <button
                         className="btn btn-danger btn-sm"

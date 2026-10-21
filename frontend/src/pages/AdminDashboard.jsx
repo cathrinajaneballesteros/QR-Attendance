@@ -22,7 +22,8 @@ import {
   CheckCircle2,
   AlertCircle,
   History,
-  GraduationCap
+  GraduationCap,
+  KeyRound
 } from 'lucide-react';
 
 
@@ -187,6 +188,10 @@ export default function AdminDashboard() {
             <Link to="/admin/settings" className="sres-btn sres-btn-secondary sres-btn-sm">
               <Sliders size={14} strokeWidth={1.8} />
               <span>Settings &amp; SMS</span>
+            </Link>
+            <Link to="/admin/settings?tab=admin_credentials" className="sres-btn sres-btn-secondary sres-btn-sm">
+              <KeyRound size={14} strokeWidth={1.8} />
+              <span>Admin Credentials</span>
             </Link>
           </div>
         }
