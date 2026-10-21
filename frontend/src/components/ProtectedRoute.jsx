@@ -24,10 +24,10 @@ export default function ProtectedRoute({ children, allowedRoles = [] }) {
   }
 
   if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
-    // Redirect to their default landing page
-    if (user.role === 'admin') return <Navigate to="/admin" replace />;
-    if (user.role === 'student') return <Navigate to="/student-portal" replace />;
-    return <Navigate to="/dashboard" replace />;
+    // Redirect to their default role landing page
+    if (user.role === 'admin') return <Navigate to="/admin/dashboard" replace />;
+    if (user.role === 'student') return <Navigate to="/student/portal" replace />;
+    return <Navigate to="/teacher/dashboard" replace />;
   }
 
   return children;

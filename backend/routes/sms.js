@@ -10,6 +10,13 @@ function staff(req, res, next) {
     next();
 }
 
+function adminOnly(req, res, next) {
+    if (req.user?.role !== 'admin') {
+        return res.status(403).json({ error: 'Administrator access required to configure or test SMS gateway' });
+    }
+    next();
+}
+
 /**
  * Check current SMS gateway configuration status
  */
@@ -19,12 +26,16 @@ router.get('/status', auth, staff, async (req, res) => {
         const rows = (await db.prepare('SELECT setting_key, setting_value FROM app_settings').all()) || [];
         const settings = Object.fromEntries(rows.map(x => [x.setting_key, x.setting_value]));
 
-        const provider = settings.sms_provider || process.env.SMS_PROVIDER || 'philsms';
+        const provider = settings.sms_provider || process.env.SMS_PROVIDER || 'textbee';
         
         let hasKey = false;
         let maskedInfo = null;
 
-        if (provider === 'philsms') {
+        if (provider === 'textbee') {
+            const apiKey = settings.textbee_api_key || process.env.TEXTBEE_API_KEY || '';
+            hasKey = !!apiKey;
+            maskedInfo = hasKey ? `${apiKey.substring(0, 4)}••••••••${apiKey.slice(-4)}` : null;
+        } else if (provider === 'philsms') {
             const token = settings.philsms_api_token || process.env.PHILSMS_API_TOKEN || '';
             hasKey = !!token;
             maskedInfo = hasKey ? `${token.substring(0, 5)}••••••••${token.slice(-4)}` : null;
@@ -49,6 +60,7 @@ router.get('/status', auth, staff, async (req, res) => {
             provider: provider,
             has_api_key: hasKey,
             masked_key: maskedInfo,
+            textbee_device_id: settings.textbee_device_id || process.env.TEXTBEE_DEVICE_ID || '',
             philsms_sender_id: settings.philsms_sender_id || process.env.PHILSMS_SENDER_ID || 'PhilSMS',
             android_gateway_url: settings.android_gateway_url || process.env.ANDROID_GATEWAY_URL || '',
             sender_name: settings.sms_sender_name || process.env.SEMAPHORE_SENDER_NAME || '',
@@ -78,7 +90,9 @@ router.post('/send', auth, staff, async (req, res) => {
         const rows = (await db.prepare('SELECT setting_key, setting_value FROM app_settings').all()) || [];
         const settings = Object.fromEntries(rows.map(x => [x.setting_key, x.setting_value]));
 
-        const provider = settings.sms_provider || process.env.SMS_PROVIDER || 'philsms';
+        const provider = settings.sms_provider || process.env.SMS_PROVIDER || 'textbee';
+        const textbeeApiKey = settings.textbee_api_key || process.env.TEXTBEE_API_KEY;
+        const textbeeDeviceId = settings.textbee_device_id || process.env.TEXTBEE_DEVICE_ID;
         const philsmsApiToken = settings.philsms_api_token || process.env.PHILSMS_API_TOKEN;
         const philsmsSenderId = settings.philsms_sender_id || process.env.PHILSMS_SENDER_ID;
         const androidGatewayUrl = settings.android_gateway_url || process.env.ANDROID_GATEWAY_URL;
@@ -91,6 +105,8 @@ router.post('/send', auth, staff, async (req, res) => {
 
         const result = await send(phone, message, {
             provider,
+            textbeeApiKey,
+            textbeeDeviceId,
             philsmsApiToken,
             philsmsSenderId,
             androidGatewayUrl,
@@ -102,7 +118,7 @@ router.post('/send', auth, staff, async (req, res) => {
             twilioPhoneNumber
         });
 
-        const logStatus = result.status === 'queued' ? 'sent' : (result.status === 'mock_sent' ? 'mock_sent' : 'failed');
+        const logStatus = result.status === 'sent' ? 'sent' : (result.status === 'queued' ? 'queued' : 'failed');
         const targetNumber = result.contact || formatPhilippineNumber(phone) || phone;
 
         await db.prepare('INSERT INTO sms_logs (student_id, guardian_contact, message, status) VALUES (?, ?, ?, ?)').run(id, targetNumber, message, logStatus);
@@ -122,16 +138,18 @@ router.post('/send', auth, staff, async (req, res) => {
                 userName: req.user?.username || 'teacher',
                 actionType: 'sms_alert',
                 actionTitle: 'Dispatched Guardian SMS Notification',
-                details: `Sent SMS update to ${targetNumber} via ${provider.toUpperCase()}: "${message.substring(0, 60)}${message.length > 60 ? '...' : ''}"`,
+                details: `Sent SMS notice to ${targetNumber} via ${provider.toUpperCase()}: "${message.substring(0, 60)}${message.length > 60 ? '...' : ''}"`,
                 targetName: student.full_name
             });
         } catch (logErr) {}
 
-        const isMock = logStatus === 'mock_sent';
+        const providerName = provider === 'textbee' ? 'TextBee (Android Gateway)' : (provider === 'philsms' ? 'PhilSMS' : (provider === 'android' ? 'Android Phone' : provider.toUpperCase()));
         res.json({
-            message: isMock ? 'Simulated SMS recorded (Mock Mode - not sent to network)' : `SMS accepted and queued via ${provider === 'philsms' ? 'PhilSMS' : (provider === 'android' ? 'Android Phone' : provider.toUpperCase())}`,
+            message: logStatus === 'sent'
+                ? `SMS accepted and dispatched via ${providerName}`
+                : `SMS notice successfully recorded and queued for parent notification`,
             contact: targetNumber,
-            isMock: isMock,
+            status: logStatus,
             provider: provider
         });
     } catch (e) {
@@ -141,9 +159,9 @@ router.post('/send', auth, staff, async (req, res) => {
 });
 
 /**
- * Send a Live Test SMS to any mobile number (from Settings or SMS Logs)
+ * Send a Live Test SMS to any mobile number (Administrator only)
  */
-router.post('/test', auth, staff, async (req, res) => {
+router.post('/test', auth, adminOnly, async (req, res) => {
     try {
         const db = req.app.get('db');
         const phone = String(req.body.phone || '').trim();
@@ -154,7 +172,9 @@ router.post('/test', auth, staff, async (req, res) => {
         const rows = (await db.prepare('SELECT setting_key, setting_value FROM app_settings').all()) || [];
         const settings = Object.fromEntries(rows.map(x => [x.setting_key, x.setting_value]));
 
-        const provider = req.body.provider || settings.sms_provider || process.env.SMS_PROVIDER || 'philsms';
+        const provider = req.body.provider || settings.sms_provider || process.env.SMS_PROVIDER || 'textbee';
+        const textbeeApiKey = req.body.textbeeApiKey !== undefined ? req.body.textbeeApiKey : (settings.textbee_api_key || process.env.TEXTBEE_API_KEY);
+        const textbeeDeviceId = req.body.textbeeDeviceId !== undefined ? req.body.textbeeDeviceId : (settings.textbee_device_id || process.env.TEXTBEE_DEVICE_ID);
         const philsmsApiToken = req.body.philsmsApiToken !== undefined ? req.body.philsmsApiToken : (settings.philsms_api_token || process.env.PHILSMS_API_TOKEN);
         const philsmsSenderId = req.body.philsmsSenderId !== undefined ? req.body.philsmsSenderId : (settings.philsms_sender_id || process.env.PHILSMS_SENDER_ID);
         const androidGatewayUrl = req.body.androidGatewayUrl !== undefined ? req.body.androidGatewayUrl : (settings.android_gateway_url || process.env.ANDROID_GATEWAY_URL);
@@ -167,6 +187,8 @@ router.post('/test', auth, staff, async (req, res) => {
 
         const result = await send(phone, message, {
             provider,
+            textbeeApiKey,
+            textbeeDeviceId,
             philsmsApiToken,
             philsmsSenderId,
             androidGatewayUrl,
@@ -191,7 +213,7 @@ router.post('/test', auth, staff, async (req, res) => {
             status: result.status,
             message: result.message || 'Test SMS sent successfully!',
             contact: result.contact || phone,
-            isMock: result.status === 'mock_sent',
+            isQueued: result.status === 'queued',
             data: result.data || null,
             provider: provider
         });

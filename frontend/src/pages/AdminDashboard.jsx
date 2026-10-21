@@ -1,8 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { apiFetch } from '../utils/api';
-import LiveClock from '../components/LiveClock';
-import StatCard from '../components/StatCard';
+import { 
+  PageTitle, 
+  Card, 
+  SectionCard, 
+  StatCard, 
+  DataTable, 
+  StatusBadge, 
+  Button 
+} from '../components/ui';
 import { 
   Users, 
   UserCheck, 
@@ -156,64 +163,64 @@ export default function AdminDashboard() {
     : teachers.filter(t => String(t.id) === selectedTeacher);
 
   return (
-    <div>
-      <LiveClock />
-
-      {/* Admin Welcome */}
-      <div className="card" style={{ background: 'var(--surface-gradient)', border: '1px solid var(--primary-border)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <div>
-            <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <ShieldAlert size={20} />
-              <span>School Administration Console</span>
-            </h2>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-              Sta. Rosa Elementary School • System Monitoring &amp; DepEd SF2 Compliance
-            </p>
-          </div>
+    <div className="sres-admin-dashboard-page">
+      {/* 1. Page Header with Tag and Navigation Actions */}
+      <PageTitle
+        title="School Administration Console"
+        emoji="🛡️"
+        tag="Sta. Rosa Elementary School • System Monitoring & DepEd SF2 Compliance"
+        icon={ShieldAlert}
+        action={
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <Link to="/manage-teachers" className="btn btn-primary btn-sm">
-              <UserPlus size={14} />
+            <Link to="/admin/teachers" className="sres-btn sres-btn-primary sres-btn-sm">
+              <UserPlus size={14} strokeWidth={1.8} />
               <span>Manage Teachers</span>
             </Link>
-            <Link to="/student-accounts" className="btn btn-secondary btn-sm">
-              <GraduationCap size={14} />
+            <Link to="/admin/student-accounts" className="sres-btn sres-btn-secondary sres-btn-sm">
+              <GraduationCap size={14} strokeWidth={1.8} />
               <span>Student Accounts</span>
             </Link>
-            <Link to="/history" className="btn btn-secondary btn-sm">
-              <History size={14} />
+            <Link to="/admin/history" className="sres-btn sres-btn-secondary sres-btn-sm">
+              <History size={14} strokeWidth={1.8} />
               <span>Historical Data</span>
             </Link>
+            <Link to="/admin/settings" className="sres-btn sres-btn-secondary sres-btn-sm">
+              <Sliders size={14} strokeWidth={1.8} />
+              <span>Settings &amp; SMS</span>
+            </Link>
           </div>
-
-        </div>
-      </div>
+        }
+      />
 
       {/* Stats Counter Grid */}
-      <div className="stats-grid">
+      <div className="stats-grid" style={{ marginBottom: '24px' }}>
         <StatCard
           label="Total Students"
           value={stats.total_students || 0}
-          icon={<Users size={24} />}
-          color="#880e4f"
+          icon={Users}
+          color="#C2185B"
+          bgTint="#FDF2F6"
         />
         <StatCard
           label="Active Teachers"
           value={stats.total_teachers || 0}
-          icon={<UserCheck size={24} />}
-          color="#6b21a8"
+          icon={UserCheck}
+          color="#6366F1"
+          bgTint="#EEF2FF"
         />
         <StatCard
           label="Present Today"
           value={stats.present_today || 0}
-          icon={<UserCheck size={24} />}
-          color="#16a34a"
+          icon={UserCheck}
+          color="#10B981"
+          bgTint="#ECFDF5"
         />
         <StatCard
           label="School Attendance Rate"
           value={`${stats.attendance_rate || 0}%`}
-          icon={<TrendingUp size={24} />}
-          color="#0284c7"
+          icon={TrendingUp}
+          color="#0284C7"
+          bgTint="#E0F2FE"
         />
       </div>
 

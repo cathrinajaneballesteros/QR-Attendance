@@ -99,20 +99,23 @@ function computeSF2Days(month, attendance) {
     });
 }
 
-// DepEd standard: attendance cells use clean plain styling (no colored fills)
-const FONT_ATT_MARK = { name: 'SansSerif', color: { argb: 'FF000000' }, bold: true, size: 8 };
+// DepEd standard: attendance cells use clean plain styling (no colored fills),
+// with compact, centered marks ('X', '/', '\') that leave breathing room on all sides.
+// Segoe UI at 9.5pt bold provides perfectly balanced, symmetrical '/' and '\' slashes
+// and an 'X' with comfortable margins that never touches cell borders.
+const FONT_ATT_MARK = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF000000' } };
 
 /**
  * Applies attendance mark to an Excel cell following official DepEd SF2 rules:
  * - Empty/Blank for Present
- * - 'X' for Whole Day Absent (standard letter 'X')
- * - Upper diagonal border for AM Half-Day Absent (Latecomer / Morning absent)
- * - Lower diagonal border for PM Half-Day Absent (Cutting classes / Afternoon absent)
+ * - 'X' for Whole Day Absent (centered, compact with spacing on all 4 sides)
+ * - '/' for AM Half-Day Absent (Latecomer / Morning absent)
+ * - '\' for PM Half-Day Absent (Cutting classes / Afternoon absent)
  *
  * CRITICAL: In ExcelJS, cell.border/cell.font/cell.alignment setters directly mutate
  * this.style in place. Since the template shares style objects across hundreds of cells,
- * any style modification MUST clone cell.style first to avoid corrupting shared styles
- * (which was causing diagonal crosses to bleed across date headers and all student rows).
+ * any style modification MUST clone cell.style first to avoid corrupting shared styles.
+ * Diagonal borders are explicitly removed so marks never connect across row junctions.
  */
 function applyAttendanceCell(cell, dayAtt) {
     if (!dayAtt) {
@@ -120,34 +123,39 @@ function applyAttendanceCell(cell, dayAtt) {
         return;
     }
 
+    const curBorder = (cell.style && cell.style.border) ? clone(cell.style.border) : {};
+    delete curBorder.diagonal;
+
     if (dayAtt.isMorningAbsent) {
-        // AM half-day absence: Upper diagonal stroke
-        cell.value = '';
-        const curBorder = (cell.style && cell.style.border) ? cell.style.border : {};
+        // AM half-day absence: Centered '/' slash with margin
+        cell.value = '/';
         cell.style = Object.assign({}, cell.style || {}, {
             alignment: { horizontal: 'center', vertical: 'middle' },
-            font: FONT_ATT_MARK,
-            border: Object.assign({}, curBorder, { diagonal: { up: true, style: 'thin' } })
+            font: clone(FONT_ATT_MARK),
+            border: curBorder
         });
     } else if (dayAtt.isAfternoonAbsent) {
-        // PM half-day absence: Lower diagonal stroke
-        cell.value = '';
-        const curBorder = (cell.style && cell.style.border) ? cell.style.border : {};
+        // PM half-day absence: Centered '\' backslash with margin
+        cell.value = '\\';
         cell.style = Object.assign({}, cell.style || {}, {
             alignment: { horizontal: 'center', vertical: 'middle' },
-            font: FONT_ATT_MARK,
-            border: Object.assign({}, curBorder, { diagonal: { down: true, style: 'thin' } })
+            font: clone(FONT_ATT_MARK),
+            border: curBorder
         });
     } else if (dayAtt.isAbsent) {
-        // DepEd SF2: Whole day absent is simply the character 'X'
+        // Whole day absent: Centered 'X' with margin (not touching borders)
         cell.value = 'X';
         cell.style = Object.assign({}, cell.style || {}, {
             alignment: { horizontal: 'center', vertical: 'middle' },
-            font: FONT_ATT_MARK
+            font: clone(FONT_ATT_MARK),
+            border: curBorder
         });
     } else {
         // Present: DepEd SF2 leaves cell blank
         cell.value = '';
+        cell.style = Object.assign({}, cell.style || {}, {
+            border: curBorder
+        });
     }
 }
 
@@ -408,9 +416,13 @@ async function buildSF2Workbook(opts) {
     // Write directly into the official template sheet to guarantee 100% perfect borders,
     // exact row heights, intact merged cells, and flawless layout matching DepEd SF2.
     if (reportData.male.length <= 16 && reportData.female.length <= 13) {
-        // ---------- Header ----------
+        // ---------- Official Header Boxes (Matching excel format.xls) ----------
+        ws.getCell('F3').value = (reportData.schoolInfo && reportData.schoolInfo.schoolId) || '102056';
         ws.getCell('M3').value = reportData.schoolYear;
         ws.getCell('AA3').value = monthName;
+        ws.getCell('F4').value = (reportData.schoolInfo && reportData.schoolInfo.schoolName) || 'Sta. Rosa ES';
+        ws.getCell('AA4').value = (reportData.schoolInfo && reportData.schoolInfo.gradeLevel) || 'Grade 6';
+        ws.getCell('AM4').value = (reportData.schoolInfo && reportData.schoolInfo.section) || 'GREAT GENIUSES';
 
         DAY_COLS.forEach(function (col, i) {
             const sd = schoolDays[i];
@@ -425,6 +437,7 @@ async function buildSF2Workbook(opts) {
                 if (st) {
                     r.getCell('A').value = st.no;
                     r.getCell('C').value = st.name;
+                    if (!r.getCell('E').isMerged) r.getCell('E').value = null;
                     DAY_COLS.forEach(function (col, idx) {
                         const sd = schoolDays[idx];
                         const cell = r.getCell(col);
@@ -442,7 +455,16 @@ async function buildSF2Workbook(opts) {
                     // Blank row: clear placeholder data but preserve all template borders and formatting
                     r.getCell('A').value = i + 1;
                     r.getCell('C').value = null;
-                    DAY_COLS.forEach(function (col) { r.getCell(col).value = null; });
+                    if (!r.getCell('E').isMerged) r.getCell('E').value = null;
+                    DAY_COLS.forEach(function (col) {
+                        const c = r.getCell(col);
+                        c.value = null;
+                        if (c.style && c.style.border && c.style.border.diagonal) {
+                            const b = clone(c.style.border);
+                            delete b.diagonal;
+                            c.style = Object.assign({}, c.style, { border: b });
+                        }
+                    });
                     r.getCell('AM').value = null;
                     r.getCell('AO').value = null;
                     r.getCell('AQ').value = null;
@@ -516,6 +538,11 @@ async function buildSF2Workbook(opts) {
         writeSummaryRow(58, s.transferredOut, false, false);
         writeSummaryRow(60, s.transferredIn, false, false);
 
+        // Signatures (Adviser & School Head / Principal)
+        ws.getCell('AN65').value = (reportData.schoolInfo && reportData.schoolInfo.adviser) || 'TIFANNY MARTIN ARAGON';
+        ws.getCell('Z71').value = (reportData.schoolInfo && reportData.schoolInfo.adviser) || 'TIFANNY MARTIN ARAGON';
+        ws.getCell('AN71').value = (reportData.schoolInfo && reportData.schoolInfo.principal) || 'MC RIZ TEMPLETON BUEN';
+
         // Remove extra sheet and rename
         wb.worksheets.slice().forEach(function (w) {
             if (w.id !== ws.id) wb.removeWorksheet(w.id);
@@ -540,8 +567,13 @@ async function buildSF2Workbook(opts) {
     }
 
     for (let r = 1; r <= T.headerEnd; r++) copyRow(src, dst, r, r, merges, true);
+    // Header boxes
+    dst.getCell('F3').value = (reportData.schoolInfo && reportData.schoolInfo.schoolId) || '102056';
     dst.getCell('M3').value = reportData.schoolYear;
     dst.getCell('AA3').value = monthName;
+    dst.getCell('F4').value = (reportData.schoolInfo && reportData.schoolInfo.schoolName) || 'Sta. Rosa ES';
+    dst.getCell('AA4').value = (reportData.schoolInfo && reportData.schoolInfo.gradeLevel) || 'Grade 6';
+    dst.getCell('AM4').value = (reportData.schoolInfo && reportData.schoolInfo.section) || 'GREAT GENIUSES';
 
     DAY_COLS.forEach(function (col, i) {
         const sd = schoolDays[i];
@@ -561,6 +593,7 @@ async function buildSF2Workbook(opts) {
             const r = dst.getRow(row);
             r.getCell('A').value = st.no;
             r.getCell('C').value = st.name;
+            if (!r.getCell('E').isMerged) r.getCell('E').value = null;
 
             schoolDays.forEach(function (sd, idx) {
                 if (!sd.isClassDay) return;
@@ -627,6 +660,11 @@ async function buildSF2Workbook(opts) {
     writeSummaryRow(56, s.droppedOut, false, false);
     writeSummaryRow(58, s.transferredOut, false, false);
     writeSummaryRow(60, s.transferredIn, false, false);
+
+    // Signatures in dynamic fallback
+    at('AN65').value = (reportData.schoolInfo && reportData.schoolInfo.adviser) || 'TIFANNY MARTIN ARAGON';
+    at('Z71').value = (reportData.schoolInfo && reportData.schoolInfo.adviser) || 'TIFANNY MARTIN ARAGON';
+    at('AN71').value = (reportData.schoolInfo && reportData.schoolInfo.principal) || 'MC RIZ TEMPLETON BUEN';
 
     dst.pageSetup.printArea = 'A1:AU' + (T.footerEnd + off);
     wb.worksheets.slice().forEach(function (w) { if (w.id !== dst.id) wb.removeWorksheet(w.id); });

@@ -206,17 +206,18 @@ router.post('/scan', auth, staff, async (req, res) => {
 
     // ── Biometric Anti-Proxy Face Verification ──────────────────────────────
     const settings = await getSettingsMap(db);
+    const verificationMode = req.body.verification_mode || (settings.scanner_verification_mode === 'qr' ? 'qr' : 'both');
     const faceVerificationPolicy = settings.student_face_verification || '1';
     const incomingDescriptor = req.body.faceDescriptor;
     let faceVerified = 0;
     let faceNotEnrolled = false;
 
-    if (faceVerificationPolicy !== '0') {
+    if (verificationMode !== 'qr' && faceVerificationPolicy !== '0') {
       if (student.face_descriptor) {
         // Student has an enrolled face profile — MUST match
         if (!incomingDescriptor || !Array.isArray(incomingDescriptor) || incomingDescriptor.length < 68) {
-          // No face descriptor provided by scanner; in strict mode, reject entirely
-          if (faceVerificationPolicy === 'strict') {
+          // If mode is 'both' or policy is strict, reject if face descriptor is missing
+          if (verificationMode === 'both' || faceVerificationPolicy === 'strict') {
             return res.status(403).json({
               error: `Biometric verification required: ${student.full_name} has facial recognition enabled. The scanner must verify the student's face before recording attendance.`,
               face_required: true
@@ -281,6 +282,128 @@ router.post('/scan', auth, staff, async (req, res) => {
   }
 });
 
+// Face Biometric Roster (for fast client-side recognition in Face-Only mode)
+router.get('/face-roster', auth, staff, async (req, res) => {
+  try {
+    const db = req.app.get('db');
+    let sql = "SELECT id, full_name, lrn, sex, face_descriptor FROM students WHERE is_enrolled = 1 AND enrollment_status = 'officially_enrolled' AND face_descriptor IS NOT NULL AND face_descriptor != ''";
+    const params = [];
+    if (req.user.role === 'teacher') {
+      sql += ' AND teacher_id = ?';
+      params.push(req.user.id);
+    }
+    sql += ' ORDER BY full_name ASC';
+    const students = await db.prepare(sql).all(...params);
+    res.json(students || []);
+  } catch (err) {
+    console.error('Get face roster error:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve face biometric roster' });
+  }
+});
+
+// Face-Only Attendance Check-in Route
+router.post('/face-scan', auth, staff, async (req, res) => {
+  try {
+    const db = req.app.get('db');
+    const policy = await checkPolicy(db, req.body, true);
+    if (policy) return res.status(403).json({ error: policy });
+
+    const incomingDescriptor = req.body.faceDescriptor;
+    if (!incomingDescriptor || !Array.isArray(incomingDescriptor) || incomingDescriptor.length < 68) {
+      return res.status(400).json({ error: 'Valid facial descriptor vector is required for biometric check-in.' });
+    }
+
+    let student = null;
+    let matchDistance = Infinity;
+
+    // Case 1: Student ID is provided by client-side matcher
+    if (req.body.student_id) {
+      if (req.user.role === 'teacher') {
+        student = await db.prepare(
+          "SELECT * FROM students WHERE id = ? AND teacher_id = ? AND is_enrolled = 1 AND enrollment_status = 'officially_enrolled'"
+        ).get(req.body.student_id, req.user.id);
+      } else {
+        student = await db.prepare(
+          "SELECT * FROM students WHERE id = ? AND is_enrolled = 1 AND enrollment_status = 'officially_enrolled'"
+        ).get(req.body.student_id);
+      }
+
+      if (!student) {
+        return res.status(404).json({ error: 'Enrolled student record not found in class roster.' });
+      }
+
+      if (!student.face_descriptor) {
+        return res.status(400).json({ error: 'Student does not have an enrolled face biometric profile.' });
+      }
+
+      try {
+        const storedDesc = JSON.parse(student.face_descriptor);
+        matchDistance = computeFaceDistance(incomingDescriptor, storedDesc);
+      } catch (e) {
+        return res.status(500).json({ error: 'Corrupt stored biometric profile for student.' });
+      }
+
+      if (matchDistance > FACE_MATCH_THRESHOLD) {
+        return res.status(403).json({
+          error: `Biometric verification failed: Face does not match registered profile for ${student.full_name}.`,
+          face_mismatch: true,
+          student: student.full_name,
+          confidence: (Math.max(0, 1 - matchDistance) * 100).toFixed(1) + '%'
+        });
+      }
+    } else {
+      // Case 2: Direct server-side 1:N biometric search
+      let rosterSql = "SELECT * FROM students WHERE is_enrolled = 1 AND enrollment_status = 'officially_enrolled' AND face_descriptor IS NOT NULL AND face_descriptor != ''";
+      const rosterParams = [];
+      if (req.user.role === 'teacher') {
+        rosterSql += ' AND teacher_id = ?';
+        rosterParams.push(req.user.id);
+      }
+      const candidates = await db.prepare(rosterSql).all(...rosterParams);
+
+      let bestStudent = null;
+      let bestDist = Infinity;
+
+      for (const cand of (candidates || [])) {
+        try {
+          const storedDesc = JSON.parse(cand.face_descriptor);
+          const dist = computeFaceDistance(incomingDescriptor, storedDesc);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestStudent = cand;
+          }
+        } catch (e) {}
+      }
+
+      if (!bestStudent || bestDist > FACE_MATCH_THRESHOLD) {
+        return res.status(404).json({
+          error: 'Face not recognized. Please face the camera clearly or scan QR badge.',
+          confidence: bestDist !== Infinity ? (Math.max(0, 1 - bestDist) * 100).toFixed(1) + '%' : null
+        });
+      }
+
+      student = bestStudent;
+      matchDistance = bestDist;
+    }
+
+    // Record attendance with face_verified = 1
+    const result = await record(db, student, req.user.username, req.body, 1);
+    if (result.blocked) {
+      return res.status(403).json({ error: result.error, blocked: true, student: result.student });
+    }
+
+    res.json(Object.assign({
+      message: result.duplicate ? 'Already recorded today' : 'Attendance recorded via Face Recognition',
+      duplicate: !!result.duplicate,
+      face_verified: 1,
+      match_confidence: (Math.max(0, 1 - matchDistance) * 100).toFixed(1) + '%'
+    }, result));
+  } catch (err) {
+    console.error('Face scan attendance error:', err.message);
+    res.status(500).json({ error: 'Server error processing face recognition attendance' });
+  }
+});
+
 // Self-checkin (Student portal)
 router.post('/self', auth, async (req, res) => {
   try {
@@ -333,9 +456,14 @@ router.get('/today', auth, staff, async (req, res) => {
 // Specific date
 router.get('/date/:date', auth, staff, async (req, res) => {
   try {
-    const rows = await req.app.get('db').prepare(
-      'SELECT a.*, s.full_name, s.sex, s.lrn, s.enrollment_status, s.is_enrolled FROM attendance a JOIN students s ON a.student_id = s.id WHERE a.date = ? ORDER BY a.time_in'
-    ).all(req.params.date);
+    let dateSql = 'SELECT a.*, s.full_name, s.sex, s.lrn, s.enrollment_status, s.is_enrolled FROM attendance a JOIN students s ON a.student_id = s.id WHERE a.date = ?';
+    const dateParams = [req.params.date];
+    if (req.user.role === 'teacher') {
+      dateSql += ' AND s.teacher_id = ?';
+      dateParams.push(req.user.id);
+    }
+    dateSql += ' ORDER BY a.time_in';
+    const rows = await req.app.get('db').prepare(dateSql).all(...dateParams);
     res.json(rows || []);
   } catch (err) {
     console.error('Date attendance error:', err.message);
@@ -503,11 +631,21 @@ router.get('/history/student/:id', auth, staff, async (req, res) => {
     const student = await db.prepare('SELECT * FROM students WHERE id = ?').get(req.params.id);
     if (!student) return res.status(404).json({ error: 'Student not found' });
 
+    if (req.user.role === 'teacher' && student.teacher_id && student.teacher_id !== req.user.id) {
+      return res.status(403).json({ error: "Access denied: This student belongs to another teacher's section." });
+    }
+
     const records = (await db.prepare(
       'SELECT * FROM attendance WHERE student_id = ? ORDER BY date DESC'
     ).all(req.params.id)) || [];
 
-    const distinctDaysRow = await db.prepare('SELECT COUNT(DISTINCT date) count FROM attendance').get();
+    let distinctSql = 'SELECT COUNT(DISTINCT date) count FROM attendance';
+    const distinctParams = [];
+    if (req.user.role === 'teacher') {
+      distinctSql = 'SELECT COUNT(DISTINCT a.date) count FROM attendance a JOIN students s ON a.student_id = s.id WHERE s.teacher_id = ?';
+      distinctParams.push(req.user.id);
+    }
+    const distinctDaysRow = await db.prepare(distinctSql).get(...distinctParams);
     const totalDays = (distinctDaysRow && Number(distinctDaysRow.count)) ? Number(distinctDaysRow.count) : 1;
     const presentCount = records.length;
     const lateCount = records.filter(r => r.status === 'late').length;

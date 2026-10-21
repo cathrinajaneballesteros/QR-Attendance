@@ -11,6 +11,15 @@ import {
   Scan
 } from 'lucide-react';
 import TeacherFaceScannerModal from '../components/TeacherFaceScannerModal';
+import { showConfirm, showAlert as showSwalAlert } from '../utils/dialog';
+import { 
+  PageTitle, 
+  Card, 
+  SectionCard, 
+  DataTable, 
+  StatusBadge, 
+  Button 
+} from '../components/ui';
 
 export default function ManageTeachers() {
   const [users, setUsers] = useState([]);
@@ -91,11 +100,21 @@ export default function ManageTeachers() {
 
   const handleDeleteUser = async (id, uname) => {
     if (uname === 'admin') {
-      alert('The primary administrator account cannot be deleted.');
+      await showSwalAlert({
+        title: 'Action Restricted',
+        text: 'The primary administrator account cannot be deleted.',
+        icon: 'warning'
+      });
       return;
     }
 
-    if (!window.confirm(`Are you sure you want to delete user "${uname}"?`)) {
+    const confirmed = await showConfirm({
+      title: 'Delete Faculty Account?',
+      text: `Are you sure you want to delete user "${uname}"?`,
+      confirmButtonText: 'Yes, Delete',
+      isDanger: true
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -117,7 +136,13 @@ export default function ManageTeachers() {
   };
 
   const handleClearFace = async (teacherId, teacherName) => {
-    if (!window.confirm(`Are you sure you want to remove the registered facial recognition data for ${teacherName}?`)) {
+    const confirmed = await showConfirm({
+      title: 'Remove Facial Recognition Data?',
+      text: `Are you sure you want to remove the registered facial recognition data for ${teacherName}?`,
+      confirmButtonText: 'Yes, Remove Data',
+      isDanger: true
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -143,21 +168,24 @@ export default function ManageTeachers() {
   };
 
   return (
-    <div>
-      {/* Add User Form */}
-      <div className="card">
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">
-              <UserPlus size={22} />
-              <span>Register Faculty / Admin Account</span>
-            </h2>
-            <p className="card-subtitle">Create logins for class advisers and system staff</p>
-          </div>
-        </div>
+    <div className="sres-manage-teachers-page">
+      {/* 1. Page Header */}
+      <PageTitle
+        title="Faculty & Staff Management"
+        emoji="👩‍🏫"
+        tag={`Registered Staff: ${users.length} Accounts`}
+        icon={UserCheck}
+      />
 
+      {/* Add User Form */}
+      <SectionCard
+        title="Register Faculty / Admin Account"
+        subtitle="Create logins for class advisers and system staff"
+        icon={UserPlus}
+        style={{ marginBottom: '22px' }}
+      >
         {alert && (
-          <div className={`alert ${alert.type === 'error' ? 'alert-error' : 'alert-success'}`}>
+          <div className={`alert ${alert.type === 'error' ? 'alert-error' : 'alert-success'}`} style={{ marginBottom: '16px' }}>
             {alert.type === 'error' ? <AlertCircle size={16} /> : <CheckCircle size={16} />}
             <span>{alert.message}</span>
           </div>
@@ -221,28 +249,21 @@ export default function ManageTeachers() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              <UserPlus size={15} />
-              <span>{loading ? 'Creating account...' : 'Create Account'}</span>
-            </button>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '14px' }}>
+            <Button type="submit" variant="primary" disabled={loading} icon={UserPlus}>
+              {loading ? 'Creating account...' : 'Create Account'}
+            </Button>
           </div>
         </form>
-      </div>
+      </SectionCard>
 
       {/* Users Directory Table */}
-      <div className="card">
-        <div className="card-header">
-          <div>
-            <h3 className="card-title">
-              <UserCheck size={20} />
-              <span>Active System Accounts</span>
-            </h3>
-            <p className="card-subtitle">List of registered faculty and administrative logins</p>
-          </div>
-          <span className="badge badge-submitted">{users.length} Users</span>
-        </div>
-
+      <SectionCard
+        title="Active System Accounts"
+        subtitle="List of registered faculty and administrative logins"
+        icon={UserCheck}
+        badge={<span className="badge badge-submitted">{users.length} Users</span>}
+      >
         <div className="table-responsive">
           <table>
             <thead>
@@ -372,7 +393,7 @@ export default function ManageTeachers() {
             </tbody>
           </table>
         </div>
-      </div>
+      </SectionCard>
 
       {selectedTeacherForFace && (
         <TeacherFaceScannerModal

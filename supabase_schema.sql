@@ -130,7 +130,8 @@ INSERT INTO app_settings (setting_key, setting_value) VALUES
   ('absence_threshold', '5'),
   ('late_after', '08:00'),
   ('sms_enabled', '0'),
-  ('student_face_verification', '1')
+  ('student_face_verification', '1'),
+  ('scanner_verification_mode', 'both')
 ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value;
 
 -- ====================================================================

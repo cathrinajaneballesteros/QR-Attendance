@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Link } from 'react-router-dom';
-import { apiFetch } from '../utils/api';
+import { apiFetch, downloadWithAuth } from '../utils/api';
 import { playSuccessChime, playDuplicateChime, playWarningChime } from '../utils/sound';
 import { faceapi, loadFaceApiModels } from '../utils/faceApi';
 import LiveClock from '../components/LiveClock';
@@ -21,48 +21,188 @@ import {
   History,
   Download,
   ShieldAlert,
-  ShieldCheck
+  ShieldCheck,
+  QrCode,
+  UserCheck,
+  Scan,
+  Sparkles,
+  RefreshCw,
+  FlipHorizontal
 } from 'lucide-react';
+import {
+  PageTitle,
+  Card,
+  SectionCard,
+  StatusBadge,
+  Button
+} from '../components/ui';
+
+function computeEuclideanDistance(descA, descB) {
+  if (!descA || !descB || descA.length !== descB.length) return Infinity;
+  let sum = 0;
+  for (let i = 0; i < descA.length; i++) {
+    const d = descA[i] - descB[i];
+    sum += d * d;
+  }
+  return Math.sqrt(sum);
+}
+
+function drawFaceBox(canvas, video, box, label, isMatched) {
+  if (!canvas || !video || !video.videoWidth) return;
+  if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!box || typeof box.x !== 'number') return;
+
+  const color = isMatched ? '#10b981' : '#f59e0b';
+  const cornerLength = Math.max(16, Math.min(box.width, box.height) * 0.22);
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3.5;
+  ctx.lineCap = 'round';
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 10;
+
+  const corners = [
+    [[box.x, box.y + cornerLength], [box.x, box.y], [box.x + cornerLength, box.y]],
+    [[box.x + box.width - cornerLength, box.y], [box.x + box.width, box.y], [box.x + box.width, box.y + cornerLength]],
+    [[box.x, box.y + box.height - cornerLength], [box.x, box.y + box.height], [box.x + cornerLength, box.y + box.height]],
+    [[box.x + box.width - cornerLength, box.y + box.height], [box.x + box.width, box.y + box.height], [box.x + box.width, box.y + box.height - cornerLength]]
+  ];
+
+  corners.forEach(pts => {
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    pts.slice(1).forEach(p => ctx.lineTo(p[0], p[1]));
+    ctx.stroke();
+  });
+
+  if (label) {
+    ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    const textWidth = ctx.measureText(label).width;
+    const padding = 10;
+    const tagX = Math.max(8, box.x + (box.width - textWidth) / 2);
+    const tagY = Math.max(26, box.y - 12);
+
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = isMatched ? 'rgba(16, 185, 129, 0.95)' : 'rgba(245, 158, 11, 0.95)';
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(tagX - padding, tagY - 20, textWidth + padding * 2, 26, 8);
+    } else {
+      ctx.rect(tagX - padding, tagY - 20, textWidth + padding * 2, 26);
+    }
+    ctx.fill();
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, tagX, tagY - 2);
+  }
+}
 
 export default function AttendanceScanner() {
   const [scanning, setScanning] = useState(false);
   const [facingMode, setFacingMode] = useState('environment'); // 'environment' (back) or 'user' (front)
+  const [verificationMode, setVerificationMode] = useState('both'); // 'both' | 'face' | 'qr'
   const [manualInput, setManualInput] = useState('');
   const [scanResult, setScanResult] = useState(null);
   const [records, setRecords] = useState([]);
   const [searchFilter, setSearchFilter] = useState('');
   const [loading, setLoading] = useState(false);
+  const [faceStatusText, setFaceStatusText] = useState('Scanning for student face...');
+  const [faceRosterCount, setFaceRosterCount] = useState(0);
 
-  // Settings & GPS state (Requirement 1, 2, 8)
+  // States for Two-Step Both Mode
+  const [bothFaceDetected, setBothFaceDetected] = useState(false);
+  const [bothStatusText, setBothStatusText] = useState('Step 1: Align your face with the camera');
+
+  // Camera Visual Invert / Mirror State
+  const [isMirrored, setIsMirrored] = useState(false);
+
+  // Settings & GPS state
   const [scannerSettings, setScannerSettings] = useState({
     room_name: 'Room 101 - Grade 6 Great Geniuses',
     attendance_mode: 'onsite',
-    gps_enabled: '0'
+    gps_enabled: '0',
+    scanner_verification_mode: 'both'
   });
   const [deviceCoords, setDeviceCoords] = useState({ latitude: null, longitude: null });
   const [gpsStatus, setGpsStatus] = useState('Acquiring location...');
 
   const scannerRef = useRef(null);
+  const faceVideoRef = useRef(null);
+  const faceCanvasRef = useRef(null);
+  const faceStreamRef = useRef(null);
+  const faceAnimFrameRef = useRef(null);
+  const isDetectingRef = useRef(false);
 
-  // Load settings & request GPS location
+  // Refs for Both Mode continuous live tracking
+  const bothCanvasRef = useRef(null);
+  const bothAnimFrameRef = useRef(null);
+  const isBothDetectingRef = useRef(false);
+  const lastDetectedFaceRef = useRef(null);
+
+  const faceRosterRef = useRef([]);
+  const cooldownMapRef = useRef({});
+  const loadingRef = useRef(false);
+
+  // Keep loadingRef in sync with loading state
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+
+  // Load registered student face biometric profiles for client-side matching
+  const loadFaceRoster = async () => {
+    try {
+      const res = await apiFetch('/api/attendance/face-roster');
+      if (res.ok) {
+        const data = await res.json();
+        const list = (data || []).map(st => {
+          try {
+            return {
+              ...st,
+              descriptorArray: JSON.parse(st.face_descriptor)
+            };
+          } catch (e) {
+            return null;
+          }
+        }).filter(Boolean);
+        faceRosterRef.current = list;
+        setFaceRosterCount(list.length);
+        return list;
+      }
+    } catch (err) {
+      console.warn('Face roster load notice:', err.message);
+    }
+    return [];
+  };
+
+  // Load settings & GPS location
   useEffect(() => {
     apiFetch('/api/settings')
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data) {
+          const mode = data.scanner_verification_mode || 'both';
           setScannerSettings({
             room_name: data.room_name || 'Room 101 - Grade 6 Great Geniuses',
             attendance_mode: data.attendance_mode || 'onsite',
-            gps_enabled: data.gps_enabled || '0'
+            gps_enabled: data.gps_enabled || '0',
+            scanner_verification_mode: mode
           });
+          setVerificationMode(mode);
         }
       })
       .catch(() => {});
 
-    // Preload biometric models for anti-proxy face recognition
+    // Preload biometric models
     loadFaceApiModels().catch(err => {
       console.warn('Face models preload notice:', err.message);
     });
+
+    loadFaceRoster();
 
     // Acquire device GPS location
     if (navigator.geolocation) {
@@ -104,28 +244,112 @@ export default function AttendanceScanner() {
     };
   }, []);
 
-  const handleProcessQR = async (qrCode) => {
-    if (!qrCode || loading) return;
+  // Handle Face-Only Recognition Check-in
+  const handleProcessFace = async (student, faceDescriptor) => {
+    if (!student || loadingRef.current) return;
     setLoading(true);
+    loadingRef.current = true;
+
+    try {
+      const payload = {
+        student_id: student.id,
+        faceDescriptor: faceDescriptor,
+        latitude: deviceCoords.latitude,
+        longitude: deviceCoords.longitude
+      };
+
+      const res = await apiFetch('/api/attendance/face-scan', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        if (data.duplicate) {
+          playDuplicateChime();
+          setScanResult({
+            type: 'duplicate',
+            message: `${data.student} — Already recorded today at ${data.time_in} in ${data.room || scannerSettings.room_name}`
+          });
+        } else {
+          playSuccessChime();
+          const confBadge = data.match_confidence ? ` (${data.match_confidence} match)` : '';
+          setScanResult({
+            type: 'success',
+            message: `Recorded: ${data.student} at ${data.time_in} (${data.status === 'late' ? 'Late' : 'Present'}) • [Face Recognized ✓${confBadge}] • ${data.room || scannerSettings.room_name}`
+          });
+        }
+        loadRecords();
+      } else {
+        playWarningChime();
+        const isEnrollmentBlocked = data.blocked || (data.error && data.error.includes('not officially enrolled'));
+        setScanResult({
+          type: isEnrollmentBlocked ? 'enrollment_blocked' : 'error',
+          message: data.error || 'Face recognition check-in was rejected.'
+        });
+      }
+    } catch (err) {
+      setScanResult({
+        type: 'error',
+        message: 'Network error recording biometric face attendance.'
+      });
+    } finally {
+      setLoading(false);
+      loadingRef.current = false;
+    }
+  };
+
+  // Handle QR Code Scan (Supports QR Only and Both QR+Face 2FA)
+  const handleProcessQR = async (qrCode) => {
+    if (!qrCode || loadingRef.current) return;
+    setLoading(true);
+    loadingRef.current = true;
 
     let faceDescriptor = null;
-    try {
-      const videoEl = document.querySelector('#qr-reader video');
-      if (videoEl && videoEl.videoWidth > 0 && faceapi.nets.tinyFaceDetector.isLoaded) {
-        const detection = await faceapi
-          .detectSingleFace(videoEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.25 }))
-          .withFaceLandmarks()
-          .withFaceDescriptor();
-        if (detection && detection.descriptor) {
-          faceDescriptor = Array.from(detection.descriptor);
+    if (verificationMode === 'both') {
+      const now = Date.now();
+      const lastFace = lastDetectedFaceRef.current;
+      // Check if we have a fresh face descriptor from live detection buffer (last 3.0s)
+      if (lastFace && (now - lastFace.timestamp < 3000) && lastFace.descriptor) {
+        faceDescriptor = lastFace.descriptor;
+      } else {
+        // Fallback: immediate single-frame capture
+        try {
+          const videoEl = document.querySelector('#qr-reader video');
+          if (videoEl && videoEl.videoWidth > 0 && faceapi.nets.tinyFaceDetector.isLoaded) {
+            const detection = await faceapi
+              .detectSingleFace(videoEl, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.25 }))
+              .withFaceLandmarks()
+              .withFaceDescriptor();
+            if (detection && detection.descriptor) {
+              faceDescriptor = Array.from(detection.descriptor);
+              lastDetectedFaceRef.current = {
+                descriptor: faceDescriptor,
+                timestamp: Date.now()
+              };
+            }
+          }
+        } catch (faceErr) {
+          // Non-blocking face capture
         }
       }
-    } catch (faceErr) {
-      // Non-blocking face capture
+
+      if (!faceDescriptor) {
+        playWarningChime();
+        setScanResult({
+          type: 'face_required',
+          message: 'Face not detected yet! Please look at the camera until "Face Detected ✓" appears, then present your QR badge.'
+        });
+        setLoading(false);
+        loadingRef.current = false;
+        return;
+      }
     }
 
     const payload = {
       qr_code: qrCode,
+      verification_mode: verificationMode,
       latitude: deviceCoords.latitude,
       longitude: deviceCoords.longitude,
       faceDescriptor
@@ -148,10 +372,16 @@ export default function AttendanceScanner() {
           });
         } else {
           playSuccessChime();
-          const faceNotice = data.face_verified ? ' • [Face Verified ✓]' : (data.face_not_enrolled ? ' • [No Face Registered]' : '');
+          let methodNotice = '';
+          if (verificationMode === 'both') {
+            methodNotice = data.face_verified ? ' • [QR + Face 2FA ✓]' : (data.face_not_enrolled ? ' • [No Face Registered]' : '');
+          } else {
+            methodNotice = ' • [QR Scan]';
+          }
+
           setScanResult({
             type: 'success',
-            message: `Recorded: ${data.student} at ${data.time_in} (${data.status === 'late' ? 'Late' : 'Present'})${faceNotice} • ${data.room || scannerSettings.room_name}`
+            message: `Recorded: ${data.student} at ${data.time_in} (${data.status === 'late' ? 'Late' : 'Present'})${methodNotice} • ${data.room || scannerSettings.room_name}`
           });
         }
         loadRecords();
@@ -171,7 +401,6 @@ export default function AttendanceScanner() {
             message: data.error
           });
         } else {
-          // Check if error is due to unenrollment (Requirement 11)
           const isEnrollmentBlocked = data.blocked || (data.error && data.error.includes('not officially enrolled'));
           setScanResult({
             type: isEnrollmentBlocked ? 'enrollment_blocked' : 'error',
@@ -186,35 +415,274 @@ export default function AttendanceScanner() {
       });
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
   };
 
-  const startScanner = async () => {
-    setScanResult(null);
-    try {
-      if (scannerRef.current) {
-        try {
-          if (scannerRef.current.isScanning) {
-            await scannerRef.current.stop();
-          }
-        } catch (e) {}
-      } else {
-        scannerRef.current = new Html5Qrcode('qr-reader');
+  // Continuous Face Tracking Loop for Both Mode (over #qr-reader video)
+  const startBothModeFaceTracking = () => {
+    if (isBothDetectingRef.current) return;
+    isBothDetectingRef.current = true;
+    let lastDetectTime = 0;
+
+    const checkAndLoop = () => {
+      if (!isBothDetectingRef.current) return;
+      const video = document.querySelector('#qr-reader video');
+
+      if (!video || video.readyState < 2 || !video.videoWidth) {
+        bothAnimFrameRef.current = requestAnimationFrame(checkAndLoop);
+        return;
       }
 
-      await scannerRef.current.start(
-        { facingMode: facingMode },
-        {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.0
-        },
-        (decodedText) => {
-          handleProcessQR(decodedText);
-        },
-        () => {}
-      );
-      setScanning(true);
+      const loop = async (timestamp) => {
+        if (!isBothDetectingRef.current) return;
+        const v = document.querySelector('#qr-reader video');
+        if (!v || v.readyState < 2) {
+          bothAnimFrameRef.current = requestAnimationFrame(loop);
+          return;
+        }
+
+        if (timestamp - lastDetectTime > 120) {
+          lastDetectTime = timestamp;
+          try {
+            if (faceapi.nets.tinyFaceDetector.isLoaded && !loadingRef.current) {
+              const detection = await faceapi
+                .detectSingleFace(v, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.25 }))
+                .withFaceLandmarks()
+                .withFaceDescriptor();
+
+              if (detection && detection.detection && detection.descriptor) {
+                const box = detection.detection.box;
+                const desc = Array.from(detection.descriptor);
+                lastDetectedFaceRef.current = {
+                  descriptor: desc,
+                  timestamp: Date.now(),
+                  box
+                };
+                setBothFaceDetected(true);
+                setBothStatusText('Face Detected ✓ — Now present your QR Code!');
+                drawFaceBox(bothCanvasRef.current, v, box, '✓ Face Detected (Show QR)', true);
+              } else {
+                const now = Date.now();
+                const lastTime = lastDetectedFaceRef.current?.timestamp || 0;
+                if (now - lastTime > 2500) {
+                  setBothFaceDetected(false);
+                  setBothStatusText('Step 1: Align your face with the camera');
+                  if (bothCanvasRef.current) {
+                    const ctx = bothCanvasRef.current.getContext('2d');
+                    ctx.clearRect(0, 0, bothCanvasRef.current.width, bothCanvasRef.current.height);
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            // Non-blocking frame error
+          }
+        }
+        bothAnimFrameRef.current = requestAnimationFrame(loop);
+      };
+
+      bothAnimFrameRef.current = requestAnimationFrame(loop);
+    };
+
+    bothAnimFrameRef.current = requestAnimationFrame(checkAndLoop);
+  };
+
+  const stopBothModeFaceTracking = () => {
+    isBothDetectingRef.current = false;
+    if (bothAnimFrameRef.current) {
+      cancelAnimationFrame(bothAnimFrameRef.current);
+      bothAnimFrameRef.current = null;
+    }
+    if (bothCanvasRef.current) {
+      const ctx = bothCanvasRef.current.getContext('2d');
+      ctx.clearRect(0, 0, bothCanvasRef.current.width, bothCanvasRef.current.height);
+    }
+    lastDetectedFaceRef.current = null;
+    setBothFaceDetected(false);
+    setBothStatusText('Step 1: Align your face with the camera');
+  };
+
+  // Dedicated Face Recognition Loop for Face-Only Mode
+  const startFaceRecognitionLoop = () => {
+    if (isDetectingRef.current) return;
+    isDetectingRef.current = true;
+    let lastDetectTime = 0;
+
+    const loop = async (timestamp) => {
+      if (!isDetectingRef.current || !faceVideoRef.current) return;
+      if (timestamp - lastDetectTime > 120) {
+        lastDetectTime = timestamp;
+        try {
+          const video = faceVideoRef.current;
+          if (video && video.readyState >= 2 && video.videoWidth > 0 && !loadingRef.current) {
+            const detection = await faceapi
+              .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.3 }))
+              .withFaceLandmarks()
+              .withFaceDescriptor();
+
+            if (detection && detection.detection && detection.descriptor) {
+              const box = detection.detection.box;
+              const liveDesc = Array.from(detection.descriptor);
+
+              let bestMatch = null;
+              let bestDist = Infinity;
+              const roster = faceRosterRef.current || [];
+              for (const s of roster) {
+                const dist = computeEuclideanDistance(liveDesc, s.descriptorArray);
+                if (dist < bestDist) {
+                  bestDist = dist;
+                  bestMatch = s;
+                }
+              }
+
+              if (bestMatch && bestDist <= 0.52) {
+                const confidencePercent = (Math.max(0, 1 - bestDist) * 100).toFixed(0);
+                const label = `✓ ${bestMatch.full_name} (${confidencePercent}%)`;
+                drawFaceBox(faceCanvasRef.current, video, box, label, true);
+                setFaceStatusText(`Recognized: ${bestMatch.full_name} (${confidencePercent}%)`);
+
+                // Check 4-second cooldown per student
+                const nowMs = Date.now();
+                const lastScanned = cooldownMapRef.current[bestMatch.id] || 0;
+                if (nowMs - lastScanned > 4000) {
+                  cooldownMapRef.current[bestMatch.id] = nowMs;
+                  handleProcessFace(bestMatch, liveDesc);
+                }
+              } else {
+                drawFaceBox(faceCanvasRef.current, video, box, 'Face Detected • Unrecognized', false);
+                setFaceStatusText('Face detected • Aligning with roster...');
+              }
+            } else {
+              if (faceCanvasRef.current) {
+                const c = faceCanvasRef.current;
+                const ctx = c.getContext('2d');
+                ctx.clearRect(0, 0, c.width, c.height);
+              }
+              setFaceStatusText('Scanning for student face...');
+            }
+          }
+        } catch (e) {
+          // Non-blocking frame detection error
+        }
+      }
+      faceAnimFrameRef.current = requestAnimationFrame(loop);
+    };
+
+    faceAnimFrameRef.current = requestAnimationFrame(loop);
+  };
+
+  const stopFaceCamera = () => {
+    isDetectingRef.current = false;
+    if (faceAnimFrameRef.current) {
+      cancelAnimationFrame(faceAnimFrameRef.current);
+      faceAnimFrameRef.current = null;
+    }
+    if (faceStreamRef.current) {
+      try {
+        faceStreamRef.current.getTracks().forEach(t => t.stop());
+      } catch (e) {}
+      faceStreamRef.current = null;
+    }
+    if (faceVideoRef.current) {
+      faceVideoRef.current.srcObject = null;
+    }
+    if (faceCanvasRef.current) {
+      const c = faceCanvasRef.current;
+      const ctx = c.getContext('2d');
+      ctx.clearRect(0, 0, c.width, c.height);
+    }
+  };
+
+  const startScanner = async (overrideMode) => {
+    const targetMode = overrideMode || verificationMode;
+    setScanResult(null);
+
+    try {
+      if (targetMode === 'face') {
+        // Stop QR scanner if running
+        if (scannerRef.current) {
+          try {
+            if (scannerRef.current.isScanning) {
+              await scannerRef.current.stop();
+            }
+          } catch (e) {}
+        }
+        stopFaceCamera();
+        stopBothModeFaceTracking();
+
+        await loadFaceApiModels();
+        await loadFaceRoster();
+
+        const constraints = {
+          video: {
+            facingMode: facingMode,
+            width: { ideal: 1280, min: 640 },
+            height: { ideal: 720, min: 480 }
+          },
+          audio: false
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        faceStreamRef.current = stream;
+
+        if (faceVideoRef.current) {
+          faceVideoRef.current.srcObject = stream;
+          const onReady = () => {
+            if (faceVideoRef.current) {
+              faceVideoRef.current.play().catch(() => {});
+              startFaceRecognitionLoop();
+            }
+          };
+          if (faceVideoRef.current.readyState >= 2) onReady();
+          else {
+            faceVideoRef.current.onloadedmetadata = onReady;
+            faceVideoRef.current.onloadeddata = onReady;
+          }
+        }
+        setScanning(true);
+      } else {
+        // QR or Both mode: use Html5Qrcode
+        stopFaceCamera();
+        stopBothModeFaceTracking();
+
+        if (targetMode === 'both') {
+          await loadFaceApiModels();
+        }
+
+        if (scannerRef.current) {
+          try {
+            if (scannerRef.current.isScanning) {
+              await scannerRef.current.stop();
+            }
+          } catch (e) {}
+        } else {
+          scannerRef.current = new Html5Qrcode('qr-reader');
+        }
+
+        await scannerRef.current.start(
+          { facingMode: facingMode },
+          {
+            fps: 15,
+            qrbox: (viewfinderWidth, viewfinderHeight) => {
+              // Generous 88% scanning zone so both face and QR card fit comfortably
+              const w = Math.floor(viewfinderWidth * 0.88);
+              const h = Math.floor(viewfinderHeight * 0.88);
+              return { width: Math.max(280, w), height: Math.max(280, h) };
+            },
+            aspectRatio: 1.333333 // 4:3 natural aspect ratio
+          },
+          (decodedText) => {
+            handleProcessQR(decodedText);
+          },
+          () => {}
+        );
+        setScanning(true);
+
+        if (targetMode === 'both') {
+          startBothModeFaceTracking();
+        }
+      }
     } catch (err) {
       console.error('Camera start failed:', err);
       setScanResult({
@@ -226,6 +694,8 @@ export default function AttendanceScanner() {
   };
 
   const stopScanner = async () => {
+    stopFaceCamera();
+    stopBothModeFaceTracking();
     if (scannerRef.current) {
       try {
         if (scannerRef.current.isScanning) {
@@ -238,12 +708,27 @@ export default function AttendanceScanner() {
     setScanning(false);
   };
 
+  const switchVerificationMode = async (newMode) => {
+    if (newMode === verificationMode) return;
+    const wasScanning = scanning;
+    await stopScanner();
+    setVerificationMode(newMode);
+    setScanResult(null);
+    if (wasScanning) {
+      setTimeout(() => {
+        startScanner(newMode);
+      }, 250);
+    }
+  };
+
   const toggleCameraFacing = async () => {
     const nextMode = facingMode === 'environment' ? 'user' : 'environment';
     setFacingMode(nextMode);
     if (scanning) {
       await stopScanner();
-      setTimeout(startScanner, 200);
+      setTimeout(() => {
+        startScanner(verificationMode);
+      }, 250);
     }
   };
 
@@ -259,101 +744,171 @@ export default function AttendanceScanner() {
   );
 
   return (
-    <div>
-      <LiveClock />
-
-      {/* Requirement 8 & 2: Room and Attendance Mode Badges */}
-      <div style={{
-        background: 'var(--bg-card)',
-        padding: '12px 18px',
-        borderRadius: '16px',
-        marginBottom: '20px',
-        border: '1px solid var(--border)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '12px'
-      }}>
-        {/* Room Indicator (Req 8) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{
-            width: '36px',
-            height: '36px',
-            borderRadius: '10px',
-            background: 'var(--primary-light)',
-            color: 'var(--primary)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <Building size={18} />
+    <div className="sres-scanner-page">
+      {/* 1. Page Title with Mode Tag and Past History link */}
+      <PageTitle
+        title="Scan Attendance"
+        emoji="📷"
+        tag={`${scannerSettings.room_name} • ${scannerSettings.attendance_mode === 'flipped' ? 'Online Mode' : 'Onsite Mode'}`}
+        icon={Building}
+        action={
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <Link to="/history" className="sres-btn sres-btn-secondary sres-btn-sm">
+              <History size={14} strokeWidth={1.8} />
+              <span>Past History</span>
+            </Link>
           </div>
-          <div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>
-              Designated Room (Indicated)
-            </div>
-            <div style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--primary)' }}>
-              {scannerSettings.room_name}
-            </div>
-          </div>
-        </div>
-
-        {/* Mode & GPS Indicator (Req 1 & 2) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          {scannerSettings.attendance_mode === 'flipped' ? (
-            <span style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 12px',
-              borderRadius: '20px',
-              background: '#e0f2fe',
-              color: '#0369a1',
-              fontSize: '0.78rem',
-              fontWeight: 700
-            }}>
-              <Laptop size={14} />
-              <span>Online Mode (Remote Allowed)</span>
-            </span>
-          ) : (
-            <span style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '6px 12px',
-              borderRadius: '20px',
-              background: '#dcfce7',
-              color: '#15803d',
-              fontSize: '0.78rem',
-              fontWeight: 700
-            }}>
-              <MapPin size={14} />
-              <span>Onsite Mode {scannerSettings.gps_enabled === '1' ? '• Geofenced' : '• Open Gate'}</span>
-            </span>
-          )}
-
-          <Link to="/history" className="btn btn-secondary btn-sm" style={{ fontSize: '0.75rem', padding: '6px 12px' }}>
-            <History size={14} />
-            <span>Past History</span>
-          </Link>
-        </div>
-      </div>
+        }
+      />
 
       <div className="responsive-two-col" style={{ marginBottom: '24px' }}>
         {/* Scanner Card */}
-        <div className="card" style={{ textAlign: 'center' }}>
-          <div className="card-header" style={{ justifyContent: 'center' }}>
-            <h2 className="card-title">
-              <Camera size={22} />
-              <span>Gate & Classroom Scanner</span>
+        <Card style={{ textAlign: 'center' }} padding="22px">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '16px' }}>
+            <div style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              background: 'var(--primary-light)',
+              color: 'var(--primary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Camera size={19} strokeWidth={1.8} />
+            </div>
+            <h2 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-heading)', margin: 0 }}>
+              Gate & Classroom Scanner
             </h2>
           </div>
 
+          {/* Verification Mode Selector */}
+          <div className="scanner-mode-bar">
+            <button
+              type="button"
+              className={`scanner-mode-btn ${verificationMode === 'both' ? 'active mode-both' : ''}`}
+              onClick={() => switchVerificationMode('both')}
+              title="Both: QR Code + Face Biometric 2FA (Anti-Proxy)"
+            >
+              <ShieldCheck size={16} />
+              <span>Both: QR + Face (2FA)</span>
+            </button>
+            <button
+              type="button"
+              className={`scanner-mode-btn ${verificationMode === 'face' ? 'active mode-face' : ''}`}
+              onClick={() => switchVerificationMode('face')}
+              title="Face Recognition Only (Touchless Check-in)"
+            >
+              <UserCheck size={16} />
+              <span>Face Recognition Only</span>
+            </button>
+            <button
+              type="button"
+              className={`scanner-mode-btn ${verificationMode === 'qr' ? 'active mode-qr' : ''}`}
+              onClick={() => switchVerificationMode('qr')}
+              title="QR Code Only (Barcode Scanning)"
+            >
+              <QrCode size={16} />
+              <span>QR Code Only</span>
+            </button>
+          </div>
+
+          {/* Two-Step Verification HUD for Both Mode */}
+          {verificationMode === 'both' && (
+            <div className="two-step-hud">
+              <span className={`step-badge ${bothFaceDetected ? 'step-done' : 'step-active'}`}>
+                {bothFaceDetected ? <CheckCircle size={14} /> : <Scan size={14} />}
+                <span>{bothFaceDetected ? 'Step 1: Face Detected ✓' : 'Step 1: Face Camera'}</span>
+              </span>
+              <span className="step-arrow">➜</span>
+              <span className={`step-badge ${bothFaceDetected ? 'step-active-pulse' : 'step-waiting'}`}>
+                <QrCode size={14} />
+                <span>{bothFaceDetected ? 'Step 2: Show QR Badge Now' : 'Step 2: Show QR Code'}</span>
+              </span>
+            </div>
+          )}
+
+          {/* Active Mode Notice Banner (For Face and QR modes) */}
+          {verificationMode !== 'both' && (
+            <div style={{
+              fontSize: '0.76rem',
+              color: 'var(--text-muted)',
+              marginBottom: '14px',
+              textAlign: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px'
+            }}>
+              <Sparkles size={14} style={{ color: verificationMode === 'face' ? '#0284c7' : '#059669' }} />
+              <span>
+                {verificationMode === 'face' && `Contactless Mode: Stand in front of camera (${faceRosterCount} student face profiles loaded).`}
+                {verificationMode === 'qr' && 'Fast Scan Mode: Only student QR code is required. Face verification is off.'}
+              </span>
+            </div>
+          )}
+
           {/* Scanner Viewport */}
-          <div className="scanner-viewport" style={{ position: 'relative', overflow: 'hidden', minHeight: '300px', background: '#1e293b', borderRadius: '12px' }}>
-            {/* Dedicated container for Html5Qrcode - React must NOT insert children into this element */}
-            <div id="qr-reader" style={{ width: '100%', minHeight: '300px' }}></div>
+          <div 
+            className={`scanner-viewport ${isMirrored ? 'camera-mirrored' : ''}`} 
+            style={{ position: 'relative', overflow: 'hidden', minHeight: '380px', background: '#0f172a', borderRadius: '12px' }}
+          >
+            {/* Dedicated container for Html5Qrcode in QR and Both modes */}
+            <div 
+              id="qr-reader" 
+              style={{ 
+                width: '100%', 
+                minHeight: '380px', 
+                display: verificationMode === 'face' ? 'none' : 'block' 
+              }}
+            ></div>
+
+            {/* Live Face Tracking Canvas Overlay for Both Mode */}
+            {verificationMode === 'both' && (
+              <canvas
+                ref={bothCanvasRef}
+                className="scanner-face-overlay"
+                style={{ display: scanning ? 'block' : 'none' }}
+              />
+            )}
+
+            {/* Floating Live Status Pill for Both Mode */}
+            {scanning && verificationMode === 'both' && (
+              <div className="scanner-hud-status" style={{
+                background: bothFaceDetected ? 'rgba(16, 185, 129, 0.9)' : 'rgba(15, 23, 42, 0.85)',
+                borderColor: bothFaceDetected ? '#34d399' : 'rgba(255, 255, 255, 0.15)'
+              }}>
+                <div className="scanner-hud-pulse" style={{
+                  background: bothFaceDetected ? '#ffffff' : '#f59e0b',
+                  boxShadow: bothFaceDetected ? '0 0 10px #ffffff' : '0 0 10px #f59e0b'
+                }}></div>
+                <span>{bothStatusText}</span>
+              </div>
+            )}
+
+            {/* Dedicated video + HUD canvas overlay for Face Recognition mode */}
+            {verificationMode === 'face' && (
+              <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: '380px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <video
+                  ref={faceVideoRef}
+                  playsInline
+                  muted
+                  autoPlay
+                  style={{ width: '100%', height: '100%', minHeight: '380px', maxHeight: '480px', objectFit: 'contain', display: scanning ? 'block' : 'none' }}
+                />
+                <canvas
+                  ref={faceCanvasRef}
+                  className="scanner-face-overlay"
+                  style={{ display: scanning ? 'block' : 'none' }}
+                />
+                {scanning && (
+                  <div className="scanner-hud-status">
+                    <div className="scanner-hud-pulse"></div>
+                    <span>{faceStatusText}</span>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Sibling overlay for when camera is off */}
             {!scanning && (
@@ -368,7 +923,7 @@ export default function AttendanceScanner() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: '#fff',
-                background: '#1e293b',
+                background: '#0f172a',
                 zIndex: 2
               }}>
                 <Camera size={48} style={{ opacity: 0.5, marginBottom: '12px' }} />
@@ -379,22 +934,33 @@ export default function AttendanceScanner() {
           </div>
 
           {/* Scanner Controls */}
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '18px' }}>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap', marginBottom: '18px' }}>
             {!scanning ? (
-              <button className="btn btn-primary" onClick={startScanner}>
-                <Camera size={16} />
+              <button className="btn btn-primary btn-sm" onClick={() => startScanner()}>
+                <Camera size={15} />
                 <span>Start Camera</span>
               </button>
             ) : (
-              <button className="btn btn-danger" onClick={stopScanner}>
-                <CameraOff size={16} />
+              <button className="btn btn-danger btn-sm" onClick={stopScanner}>
+                <CameraOff size={15} />
                 <span>Stop Camera</span>
               </button>
             )}
 
-            <button className="btn btn-secondary" onClick={toggleCameraFacing} title="Flip camera">
-              <SwitchCamera size={16} />
-              <span>Flip ({facingMode === 'environment' ? 'Rear' : 'Front'})</span>
+            <button className="btn btn-secondary btn-sm" onClick={toggleCameraFacing} title="Flip rear / front camera">
+              <SwitchCamera size={15} />
+              <span>Camera ({facingMode === 'environment' ? 'Rear' : 'Front'})</span>
+            </button>
+
+            {/* Invert / Mirror Horizontal Toggle */}
+            <button 
+              type="button"
+              className={`btn btn-sm ${isMirrored ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setIsMirrored(!isMirrored)}
+              title="Mirror / Invert camera view horizontally"
+            >
+              <FlipHorizontal size={15} />
+              <span>{isMirrored ? 'Invert Camera (Mirror): ON' : 'Invert Camera (Mirror)'}</span>
             </button>
           </div>
 
@@ -455,26 +1021,24 @@ export default function AttendanceScanner() {
               </button>
             </div>
           </form>
-        </div>
+        </Card>
 
         {/* Today's Summary Card */}
-        <div className="card">
-          <div className="card-header">
-            <div>
-              <h3 className="card-title">
-                <Clock size={20} />
-                <span>Today's Check-ins ({records.length})</span>
-              </h3>
-              <p className="card-subtitle">{scannerSettings.room_name} • Real-time stream</p>
-            </div>
+        <SectionCard
+          title={`Today's Check-ins (${records.length})`}
+          subtitle={`${scannerSettings.room_name} • Real-time stream`}
+          icon={Clock}
+          action={
             <button 
-              className="btn btn-secondary btn-sm"
-              onClick={() => window.open(`/api/attendance/export?from=${new Date().toISOString().split('T')[0]}&to=${new Date().toISOString().split('T')[0]}`, '_blank')}
+              type="button"
+              className="sres-btn sres-btn-secondary sres-btn-sm"
+              onClick={() => downloadWithAuth(`/api/attendance/export?from=${new Date().toISOString().split('T')[0]}&to=${new Date().toISOString().split('T')[0]}`, `attendance_${new Date().toISOString().split('T')[0]}.csv`)}
             >
-              <Download size={13} />
+              <Download size={13} strokeWidth={1.8} />
               <span>CSV</span>
             </button>
-          </div>
+          }
+        >
 
           <div style={{ marginBottom: '14px' }}>
             <div style={{ position: 'relative' }}>
@@ -542,7 +1106,7 @@ export default function AttendanceScanner() {
               </div>
             )}
           </div>
-        </div>
+        </SectionCard>
       </div>
     </div>
   );

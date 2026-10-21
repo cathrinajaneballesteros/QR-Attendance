@@ -163,7 +163,7 @@ export default function TeacherFaceScannerModal({
             videoRef.current.play().catch(e => console.warn('Play error:', e));
           }
           setCameraActive(true);
-          setStatusMessage('Align your face inside the frame...');
+          setStatusMessage('Auto-detecting face in view...');
           setStatusType('searching');
           isDetectingRef.current = false;
           startDetectionLoop();
@@ -316,6 +316,17 @@ export default function TeacherFaceScannerModal({
     }
   };
 
+  const resumeDetection = (customMsg = 'Looking for face in camera view...') => {
+    setIsVerifying(false);
+    consecutiveFramesRef.current = 0;
+    setScanProgress(0);
+    setStatusType('searching');
+    setStatusMessage(customMsg);
+    if (!isDetectingRef.current) {
+      startDetectionLoop();
+    }
+  };
+
   // Main Detection Loop with High-Speed Inference and Visual Scan Timer
   const startDetectionLoop = () => {
     if (isDetectingRef.current) return;
@@ -370,9 +381,9 @@ export default function TeacherFaceScannerModal({
                 } else {
                   // Reached 100% scanning progress timer -> trigger server verification
                   setIsVerifying(true);
-                  isDetectingRef.current = false;
+                  // Keep isDetectingRef.current true so RAF loop remains alive and resumes smoothly on error
                   setStatusType('verifying');
-                  setStatusMessage('âš¡ Verifying biometric identity with DepEd faculty registry...');
+                  setStatusMessage('Verifying biometric identity with DepEd faculty registry...');
                   setScanProgress(100);
 
                   try {
@@ -387,7 +398,7 @@ export default function TeacherFaceScannerModal({
 
                     const data = await res.json();
                     if (res.ok && data.token) {
-                      setStatusMessage(`âœ… Verified! Welcome, Teacher ${data.user.full_name}!`);
+                      setStatusMessage(`Verified! Welcome, Teacher ${data.user.full_name}!`);
                       setStatusType('success');
                       setMatchedTeacher(data.user);
                       drawFaceOverlay(result, true);
@@ -403,6 +414,7 @@ export default function TeacherFaceScannerModal({
 
                       // No face profile registered: stop scanning and direct to password sign-in
                       if (res.status === 404 || (data.error && data.error.includes('No teacher account with registered facial biometric data')) || (data.error && data.error.includes('No teachers currently have facial recognition enabled'))) {
+                        isDetectingRef.current = false;
                         setStatusType('error');
                         setStatusMessage('No face profile registered. Sign in with your password or ask your administrator to enroll your face.');
                         return;
@@ -413,13 +425,10 @@ export default function TeacherFaceScannerModal({
                       consecutiveFramesRef.current = 0;
                       setScanProgress(0);
 
-                      // Short 1.4s cooldown with visual countdown before auto-resuming
+                      // Automatic recovery without freezing or requiring Reset Feed
                       setTimeout(() => {
-                        setIsVerifying(false);
-                        isDetectingRef.current = true;
-                        setStatusMessage('Align your face inside the frame to retry...');
-                        setStatusType('searching');
-                      }, 1600);
+                        resumeDetection('Looking for face... Please face the camera');
+                      }, 1400);
                     }
                   } catch (netErr) {
                     playWarningChime();
@@ -428,10 +437,8 @@ export default function TeacherFaceScannerModal({
                     consecutiveFramesRef.current = 0;
                     setScanProgress(0);
                     setTimeout(() => {
-                      setIsVerifying(false);
-                      isDetectingRef.current = true;
-                      setStatusType('searching');
-                    }, 1800);
+                      resumeDetection('Looking for face... Please face the camera');
+                    }, 1600);
                   }
                 }
 
@@ -491,11 +498,8 @@ export default function TeacherFaceScannerModal({
                         setCapturedSamples([]);
                         setScanProgress(0);
                         setTimeout(() => {
-                          setIsVerifying(false);
-                          isDetectingRef.current = true;
-                          setStatusMessage('Align your face inside the frame...');
-                          setStatusType('searching');
-                        }, 2000);
+                          resumeDetection('Looking for face... Please look at camera');
+                        }, 1800);
                       }
                     } catch (err) {
                       playWarningChime();
@@ -505,11 +509,8 @@ export default function TeacherFaceScannerModal({
                       setCapturedSamples([]);
                       setScanProgress(0);
                       setTimeout(() => {
-                        setIsVerifying(false);
-                        isDetectingRef.current = true;
-                        setStatusMessage('Align your face inside the frame...');
-                        setStatusType('searching');
-                      }, 2000);
+                        resumeDetection('Looking for face... Please look at camera');
+                      }, 1800);
                     }
                   }
                 }
@@ -523,7 +524,7 @@ export default function TeacherFaceScannerModal({
                 setScanProgress(Math.round((consecutiveFramesRef.current / 3) * 100));
               }
               if (!isVerifying && sampleList.length === 0 && statusType !== 'enroll_needed') {
-                setStatusMessage('Align your face inside the frame...');
+                setStatusMessage('Auto-detecting face in view...');
                 setStatusType('searching');
               }
             }
@@ -571,7 +572,7 @@ export default function TeacherFaceScannerModal({
       if (res.ok && data.token) {
         playSuccessChime();
         setStatusType('success');
-        setStatusMessage(`âœ… Face enrolled successfully! Welcome, Teacher ${data.user.full_name}!`);
+        setStatusMessage(`Face enrolled successfully! Welcome, Teacher ${data.user.full_name}!`);
         setTimeout(() => {
           stopCamera();
           if (onSuccess) onSuccess(data);
@@ -813,36 +814,34 @@ export default function TeacherFaceScannerModal({
             }}
           />
 
-          {/* Oval Biometric Guide Frame */}
+          {/* Open-Frame Biometric Viewfinder Frame (Auto-Detection anywhere in frame) */}
           <div style={{
             position: 'absolute',
-            width: '230px',
-            height: '290px',
-            borderRadius: '50%',
-            border: `3px ${faceInFrame ? 'solid' : 'dashed'} ${
-              statusType === 'success' ? '#10b981' : 
-              statusType === 'verifying' ? '#f59e0b' :
-              faceInFrame ? '#38bdf8' : 
-              statusType === 'error' ? '#ef4444' : '#ec4899'
+            inset: '16px',
+            border: `1.5px solid ${
+              statusType === 'success' ? 'rgba(16, 185, 129, 0.45)' : 
+              statusType === 'verifying' ? 'rgba(245, 158, 11, 0.45)' :
+              faceInFrame ? 'rgba(56, 189, 248, 0.45)' : 
+              statusType === 'error' ? 'rgba(239, 68, 68, 0.35)' : 'rgba(236, 72, 153, 0.22)'
             }`,
-            boxShadow: `0 0 30px ${
-              statusType === 'success' ? 'rgba(16, 185, 129, 0.5)' : 
-              statusType === 'verifying' ? 'rgba(245, 158, 11, 0.5)' :
-              faceInFrame ? 'rgba(56, 189, 248, 0.5)' : 
-              'rgba(236, 72, 153, 0.25)'
+            borderRadius: '16px',
+            boxShadow: `0 0 25px ${
+              statusType === 'success' ? 'rgba(16, 185, 129, 0.2)' : 
+              statusType === 'verifying' ? 'rgba(245, 158, 11, 0.2)' :
+              faceInFrame ? 'rgba(56, 189, 248, 0.2)' : 'none'
             }`,
             pointerEvents: 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            transition: 'all 0.25s ease'
+            transition: 'all 0.3s ease'
           }}>
-            {/* Animated Laser Scanning Beam */}
+            {/* Animated Laser Scanning Beam Across Active Viewport */}
             {cameraActive && !matchedTeacher && statusType !== 'enroll_needed' && (
               <div style={{
                 position: 'absolute',
-                left: '10px',
-                right: '10px',
+                left: '12px',
+                right: '12px',
                 height: '2px',
                 background: statusType === 'error' 
                   ? 'linear-gradient(90deg, transparent, #ef4444, transparent)' 
@@ -852,15 +851,15 @@ export default function TeacherFaceScannerModal({
                   ? 'linear-gradient(90deg, transparent, #38bdf8, #34d399, transparent)'
                   : 'linear-gradient(90deg, transparent, #ec4899, #38bdf8, transparent)',
                 boxShadow: faceInFrame ? '0 0 14px #38bdf8' : '0 0 10px #ec4899',
-                animation: 'faceLaserScan 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite'
+                animation: 'faceLaserScan 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite'
               }} />
             )}
 
-            {/* Corner Alignment Reticles */}
-            <div style={{ position: 'absolute', top: '-10px', width: '24px', height: '3px', background: faceInFrame ? '#38bdf8' : '#ec4899' }} />
-            <div style={{ position: 'absolute', bottom: '-10px', width: '24px', height: '3px', background: faceInFrame ? '#38bdf8' : '#ec4899' }} />
-            <div style={{ position: 'absolute', left: '-10px', height: '24px', width: '3px', background: faceInFrame ? '#38bdf8' : '#ec4899' }} />
-            <div style={{ position: 'absolute', right: '-10px', height: '24px', width: '3px', background: faceInFrame ? '#38bdf8' : '#ec4899' }} />
+            {/* Corner Alignment Reticles on Frame Perimeter */}
+            <div style={{ position: 'absolute', top: '-2px', left: '-2px', width: '22px', height: '22px', borderTop: `3px solid ${faceInFrame ? '#38bdf8' : '#ec4899'}`, borderLeft: `3px solid ${faceInFrame ? '#38bdf8' : '#ec4899'}`, borderTopLeftRadius: '14px' }} />
+            <div style={{ position: 'absolute', top: '-2px', right: '-2px', width: '22px', height: '22px', borderTop: `3px solid ${faceInFrame ? '#38bdf8' : '#ec4899'}`, borderRight: `3px solid ${faceInFrame ? '#38bdf8' : '#ec4899'}`, borderTopRightRadius: '14px' }} />
+            <div style={{ position: 'absolute', bottom: '-2px', left: '-2px', width: '22px', height: '22px', borderBottom: `3px solid ${faceInFrame ? '#38bdf8' : '#ec4899'}`, borderLeft: `3px solid ${faceInFrame ? '#38bdf8' : '#ec4899'}`, borderBottomLeftRadius: '14px' }} />
+            <div style={{ position: 'absolute', bottom: '-2px', right: '-2px', width: '22px', height: '22px', borderBottom: `3px solid ${faceInFrame ? '#38bdf8' : '#ec4899'}`, borderRight: `3px solid ${faceInFrame ? '#38bdf8' : '#ec4899'}`, borderBottomRightRadius: '14px' }} />
           </div>
 
           {/* Model Loading State Overlay */}
@@ -995,7 +994,7 @@ export default function TeacherFaceScannerModal({
                 ) : (
                   <>
                     <Scan size={13} style={{ color: '#94a3b8' }} />
-                    <span>Waiting for Face Alignment...</span>
+                    <span>Auto-detecting face in view...</span>
                   </>
                 )}
               </span>
@@ -1115,14 +1114,7 @@ export default function TeacherFaceScannerModal({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {statusType === 'error' && (
                 <button
-                  onClick={() => {
-                    setIsVerifying(false);
-                    isDetectingRef.current = true;
-                    setScanProgress(0);
-                    consecutiveFramesRef.current = 0;
-                    setStatusType('searching');
-                    setStatusMessage('Align your face inside the frame...');
-                  }}
+                  onClick={() => resumeDetection('Looking for face in view...')}
                   style={{
                     background: 'rgba(239, 68, 68, 0.15)',
                     border: '1px solid rgba(239, 68, 68, 0.3)',

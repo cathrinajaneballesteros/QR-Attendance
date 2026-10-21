@@ -24,6 +24,17 @@ import {
   Camera
 } from 'lucide-react';
 import StudentFaceScannerModal from '../components/StudentFaceScannerModal';
+import StudentQrModal from '../components/StudentQrModal';
+import { showConfirm } from '../utils/dialog';
+import {
+  PageTitle,
+  Card,
+  SectionCard,
+  DataTable,
+  StatusBadge,
+  EmptyState,
+  Button
+} from '../components/ui';
 
 export default function Students() {
   const [students, setStudents] = useState([]);
@@ -38,6 +49,7 @@ export default function Students() {
   const [editStudent, setEditStudent] = useState(null);
   const [isBatchOpen, setIsBatchOpen] = useState(false);
   const [faceModalStudent, setFaceModalStudent] = useState(null);
+  const [selectedQrStudent, setSelectedQrStudent] = useState(null);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -335,7 +347,13 @@ export default function Students() {
   };
 
   const handleClearFace = async (student) => {
-    if (!window.confirm(`Are you sure you want to remove the facial biometric profile for ${student.full_name}?`)) {
+    const confirmed = await showConfirm({
+      title: 'Remove Facial Profile?',
+      text: `Are you sure you want to remove the facial biometric profile for ${student.full_name}?`,
+      confirmButtonText: 'Yes, Remove Profile',
+      isDanger: true
+    });
+    if (!confirmed) {
       return;
     }
     try {
@@ -418,7 +436,13 @@ export default function Students() {
   };
 
   const handleDelete = async (id, name) => {
-    if (!window.confirm(`Are you sure you want to delete ${name}? This cannot be undone.`)) {
+    const confirmed = await showConfirm({
+      title: 'Delete Student Record?',
+      text: `Are you sure you want to delete ${name}? This cannot be undone.`,
+      confirmButtonText: 'Yes, Delete',
+      isDanger: true
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -460,150 +484,157 @@ export default function Students() {
   });
 
   return (
-    <div>
-      <div className="card">
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">
-              <Users size={22} />
-              <span>Learners Directory & Class Roster</span>
-            </h2>
-            <p className="card-subtitle">
-              Total: {students.length} Learners ({maleCount} Male, {femaleCount} Female) • {enrolledCount} Officially Enrolled
-            </p>
-          </div>
-
+    <div className="sres-students-page">
+      {/* 1. Page Title with Counts Tag and Quick Actions */}
+      <PageTitle
+        title="Class Roster"
+        emoji="👥"
+        tag={`Total: ${students.length} Learners (${maleCount} Male, ${femaleCount} Female) • ${enrolledCount} Officially Enrolled`}
+        icon={Users}
+        action={
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {/* Import from Excel (Requirement: Fresh teacher account imports add learner.xls) */}
-            <button
-              className="btn btn-primary"
+            <Button
+              variant="primary"
+              size="sm"
+              icon={FileSpreadsheet}
               onClick={handleOpenImport}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
               title="Import learners from DepEd SF2 Excel template (.xls / .xlsx)"
             >
-              <FileSpreadsheet size={16} />
-              <span>Import Excel (.xls)</span>
-            </button>
+              Import Excel (.xls)
+            </Button>
 
-            {/* Requirement 10: Setup Class Roster Button */}
-            <button
-              className="btn btn-secondary"
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={ListPlus}
               onClick={() => setIsBatchOpen(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
-              <ListPlus size={16} />
-              <span>Set Class Roster ({students.length})</span>
-            </button>
+              Set Class Roster ({students.length})
+            </Button>
 
-            <Link to="/print-qr" className="btn btn-secondary">
-              <Printer size={16} />
+            <Link to="/teacher/print-qr" className="sres-btn sres-btn-secondary sres-btn-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <Printer size={14} strokeWidth={1.8} />
               <span>Print All QRs</span>
             </Link>
 
-            <button
-              className="btn btn-secondary"
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={UserPlus}
               onClick={() => setIsAddOpen(true)}
             >
-              <UserPlus size={16} />
-              <span>Add Learner</span>
-            </button>
+              Add Learner
+            </Button>
           </div>
+        }
+      />
+
+      {alert && (
+        <div className={`alert ${alert.type === 'error' ? 'alert-error' : 'alert-success'}`} style={{ marginBottom: '18px' }}>
+          {alert.type === 'error' ? <AlertCircle size={16} /> : <CheckCircle size={16} />}
+          <span>{alert.message}</span>
         </div>
+      )}
 
-        {alert && (
-          <div className={`alert ${alert.type === 'error' ? 'alert-error' : 'alert-success'}`}>
-            {alert.type === 'error' ? <AlertCircle size={16} /> : <CheckCircle size={16} />}
-            <span>{alert.message}</span>
-          </div>
-        )}
-
-        {/* Fresh Teacher Account Onboarding Callout Banner */}
-        {students.length === 0 && !loading && (
-          <div style={{
-            background: 'linear-gradient(135deg, rgba(136, 14, 79, 0.05) 0%, rgba(194, 24, 91, 0.1) 100%)',
-            border: '2px dashed var(--primary-border)',
-            borderRadius: '16px',
-            padding: '28px 24px',
+      {/* Fresh Teacher Account Onboarding Callout Banner */}
+      {students.length === 0 && !loading && (
+        <Card
+          style={{
+            background: 'linear-gradient(135deg, #FFF5F8 0%, #FFFFFF 100%)',
+            border: '1.5px dashed var(--border-pink)',
             textAlign: 'center',
             marginBottom: '22px'
+          }}
+          padding="28px 24px"
+        >
+          <div style={{
+            width: '52px',
+            height: '52px',
+            borderRadius: '50%',
+            background: 'var(--primary-light)',
+            color: 'var(--primary)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: '12px'
           }}>
-            <div style={{
-              width: '52px',
-              height: '52px',
-              borderRadius: '50%',
-              background: 'var(--primary-light)',
-              color: 'var(--primary)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: '12px'
-            }}>
-              <FileSpreadsheet size={26} />
-            </div>
-            <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: '8px' }}>
-              Fresh Teacher Account: No Learners in Your Class Yet
-            </h3>
-            <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', maxWidth: '600px', margin: '0 auto 18px auto', lineHeight: 1.5 }}>
-              Each teacher manages their own isolated student records. To start recording attendance, import your official learner list directly from your Excel file (e.g. <code>add learner.xls</code> on sheet <code>MARCH</code>) or add learners individually.
-            </p>
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <button 
-                className="btn btn-primary"
-                onClick={handleOpenImport}
-                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-              >
-                <FileSpreadsheet size={16} />
-                <span>Import Learners from Excel (.xls / .xlsx)</span>
-              </button>
-              <button 
-                className="btn btn-secondary"
-                onClick={() => setIsBatchOpen(true)}
-                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-              >
-                <ListPlus size={16} />
-                <span>Paste Names List</span>
-              </button>
-              <button 
-                className="btn btn-secondary"
-                onClick={() => setIsAddOpen(true)}
-                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-              >
-                <UserPlus size={16} />
-                <span>Add Single Learner</span>
-              </button>
-            </div>
+            <FileSpreadsheet size={26} strokeWidth={1.8} />
           </div>
-        )}
+          <h3 style={{ fontSize: '1.12rem', fontWeight: 800, color: 'var(--text-heading)', marginBottom: '8px' }}>
+            Fresh Teacher Account: No Learners in Your Class Yet
+          </h3>
+          <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', maxWidth: '600px', margin: '0 auto 18px auto', lineHeight: 1.5 }}>
+            Each teacher manages their own isolated student records. To start recording attendance, import your official learner list directly from your Excel file (e.g. <code>add learner.xls</code> on sheet <code>MARCH</code>) or add learners individually.
+          </p>
+          <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <Button 
+              variant="primary"
+              icon={FileSpreadsheet}
+              onClick={handleOpenImport}
+            >
+              Import Learners from Excel (.xls / .xlsx)
+            </Button>
+            <Button 
+              variant="secondary"
+              icon={ListPlus}
+              onClick={() => setIsBatchOpen(true)}
+            >
+              Paste Names List
+            </Button>
+            <Button 
+              variant="secondary"
+              icon={UserPlus}
+              onClick={() => setIsAddOpen(true)}
+            >
+              Add Single Learner
+            </Button>
+          </div>
+        </Card>
+      )}
 
+      {/* Main Roster Card */}
+      <SectionCard
+        title="Learners Directory"
+        subtitle={`Showing ${filteredStudents.length} of ${students.length} students`}
+        icon={Users}
+      >
         {/* Search and Filters row */}
         <div style={{ display: 'flex', gap: '12px', marginBottom: '18px', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: '220px', position: 'relative' }}>
             <input
               type="text"
               className="form-input"
-              style={{ paddingLeft: '36px' }}
+              style={{ 
+                paddingLeft: '38px',
+                borderRadius: '10px',
+                borderColor: 'var(--border-pink)',
+                background: '#FFFFFF'
+              }}
               placeholder="Search by learner name, LRN, or QR code..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+            <Search size={16} strokeWidth={1.8} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           </div>
 
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
             <button 
-              className={`btn btn-sm ${sexFilter === 'ALL' ? 'btn-primary' : 'btn-secondary'}`}
+              type="button"
+              className={`sres-btn sres-btn-sm ${sexFilter === 'ALL' ? 'sres-btn-primary' : 'sres-btn-secondary'}`}
               onClick={() => setSexFilter('ALL')}
             >
               All ({students.length})
             </button>
             <button 
-              className={`btn btn-sm ${sexFilter === 'M' ? 'btn-primary' : 'btn-secondary'}`}
+              type="button"
+              className={`sres-btn sres-btn-sm ${sexFilter === 'M' ? 'sres-btn-primary' : 'sres-btn-secondary'}`}
               onClick={() => setSexFilter('M')}
             >
               Male ({maleCount})
             </button>
             <button 
-              className={`btn btn-sm ${sexFilter === 'F' ? 'btn-primary' : 'btn-secondary'}`}
+              type="button"
+              className={`sres-btn sres-btn-sm ${sexFilter === 'F' ? 'sres-btn-primary' : 'sres-btn-secondary'}`}
               onClick={() => setSexFilter('F')}
             >
               Female ({femaleCount})
@@ -611,7 +642,8 @@ export default function Students() {
 
             {/* Requirement 11 filter */}
             <button 
-              className={`btn btn-sm ${enrollFilter === 'enrolled' ? 'btn-primary' : 'btn-secondary'}`}
+              type="button"
+              className={`sres-btn sres-btn-sm ${enrollFilter === 'enrolled' ? 'sres-btn-primary' : 'sres-btn-secondary'}`}
               onClick={() => setEnrollFilter(enrollFilter === 'enrolled' ? 'ALL' : 'enrolled')}
               title="Show only officially enrolled students eligible for attendance"
             >
@@ -619,7 +651,8 @@ export default function Students() {
             </button>
             {notEnrolledCount > 0 && (
               <button 
-                className={`btn btn-sm ${enrollFilter === 'not_enrolled' ? 'btn-danger' : 'btn-secondary'}`}
+                type="button"
+                className={`sres-btn sres-btn-sm ${enrollFilter === 'not_enrolled' ? 'sres-btn-danger' : 'sres-btn-secondary'}`}
                 onClick={() => setEnrollFilter(enrollFilter === 'not_enrolled' ? 'ALL' : 'not_enrolled')}
                 title="Show learners blocked from attendance"
               >
@@ -630,191 +663,194 @@ export default function Students() {
         </div>
 
         {/* Students Table */}
-        <div className="table-responsive">
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: '45px' }}>No.</th>
-                <th>Learner Name (Last, First, Middle)</th>
-                <th style={{ width: '130px' }}>LRN</th>
-                <th style={{ width: '60px' }}>Sex</th>
-                <th style={{ width: '150px' }}>QR Code ID</th>
-                <th style={{ width: '160px' }}>Enrollment Status</th>
-                <th style={{ width: '135px', textAlign: 'center' }}>Face ID</th>
-                <th>Guardian Contact</th>
-                <th style={{ width: '120px', textAlign: 'center' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredStudents.length === 0 ? (
-                <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-                    {search ? 'No matching students found.' : 'No students found in the database.'}
-                  </td>
-                </tr>
-              ) : (
-                filteredStudents.map((s, index) => {
-                  const isEnrolled = isStudentEnrolled(s);
-                  return (
-                    <tr key={s.id}>
-                      <td>{index + 1}</td>
-                      <td style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+        <DataTable
+          columns={[
+            { label: 'No.', width: '45px' },
+            { label: 'Learner Name' },
+            { label: 'LRN', width: '130px' },
+            { label: 'Sex', width: '70px' },
+            { label: 'QR Code ID', width: '140px' },
+            { label: 'Enrollment Status', width: '160px' },
+            { label: 'Face ID', width: '135px', align: 'center' },
+            { label: 'Guardian Contact' },
+            { label: 'Actions', width: '110px', align: 'center' }
+          ]}
+        >
+          {filteredStudents.length === 0 ? (
+            <tr>
+              <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                {search ? 'No matching students found.' : 'No students found in the database.'}
+              </td>
+            </tr>
+          ) : (
+            filteredStudents.map((s, index) => {
+              const isEnrolled = isStudentEnrolled(s);
+              return (
+                <tr key={s.id}>
+                  <td>{index + 1}</td>
+                  <td>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontWeight: 700, color: 'var(--text-heading)' }}>
                         {s.full_name}
-                      </td>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
-                        {s.lrn || '—'}
-                      </td>
-                      <td>
-                        <span className={`badge ${s.sex === 'M' ? 'badge-not-started' : 'badge-pending'}`}>
-                          {s.sex === 'M' ? 'Male' : 'Female'}
-                        </span>
-                      </td>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--primary)' }}>
-                        {s.qr_code || '—'}
-                      </td>
-                      <td>
-                        {/* Requirement 11: Display and toggle enrollment status */}
+                      </span>
+                    </div>
+                  </td>
+                  <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', color: 'var(--text-heading)' }}>
+                    {s.lrn || '—'}
+                  </td>
+                  <td>
+                    <StatusBadge
+                      variant={s.sex === 'M' ? 'neutral' : 'pink'}
+                      label={s.sex === 'M' ? 'Male' : 'Female'}
+                    />
+                  </td>
+                  <td>
+                    {s.qr_code ? (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedQrStudent(s)}
+                        title={`View and download QR Code badge for ${s.full_name}`}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          fontSize: '0.76rem',
+                          padding: '5px 10px',
+                          borderRadius: '8px',
+                          color: 'var(--primary)',
+                          border: '1px solid var(--border-pink)',
+                          background: 'var(--primary-light)',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <QrCode size={13} strokeWidth={1.8} />
+                        <span>View QR</span>
+                      </button>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>—</span>
+                    )}
+                  </td>
+                  <td>
+                    {/* Toggle enrollment status */}
+                    <button
+                      type="button"
+                      onClick={() => handleToggleEnrollment(s)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: 0,
+                        textAlign: 'left'
+                      }}
+                      title="Click to toggle enrollment eligibility for attendance"
+                    >
+                      {isEnrolled ? (
+                        <StatusBadge
+                          variant="success"
+                          icon={ShieldCheck}
+                          label="Enrolled"
+                        />
+                      ) : (
+                        <StatusBadge
+                          variant="danger"
+                          icon={ShieldAlert}
+                          label="Blocked"
+                        />
+                      )}
+                    </button>
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    {s.has_face_profile ? (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                         <button
                           type="button"
-                          onClick={() => handleToggleEnrollment(s)}
+                          onClick={() => setFaceModalStudent(s)}
+                          className="sres-btn sres-btn-sm"
+                          style={{
+                            padding: '3px 8px',
+                            fontSize: '0.72rem',
+                            background: '#ECFDF5',
+                            color: '#10B981',
+                            border: '1px solid #A7F3D0',
+                            borderRadius: '12px'
+                          }}
+                          title="Face biometric enrolled. Click to re-scan/update."
+                        >
+                          <ShieldCheck size={12} strokeWidth={2} />
+                          <span>Enrolled</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleClearFace(s)}
                           style={{
                             background: 'none',
                             border: 'none',
+                            color: '#94A3B8',
                             cursor: 'pointer',
-                            padding: 0,
-                            textAlign: 'left'
+                            padding: '2px',
+                            display: 'inline-flex',
+                            alignItems: 'center'
                           }}
-                          title="Click to toggle enrollment eligibility for attendance"
+                          title="Clear face biometric data"
                         >
-                          {isEnrolled ? (
-                            <span style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              background: '#dcfce7',
-                              color: '#15803d',
-                              padding: '3px 8px',
-                              borderRadius: '12px',
-                              fontSize: '0.72rem',
-                              fontWeight: 700
-                            }}>
-                              <ShieldCheck size={12} />
-                              <span>Enrolled</span>
-                            </span>
-                          ) : (
-                            <span style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              background: '#fee2e2',
-                              color: '#b91c1c',
-                              padding: '3px 8px',
-                              borderRadius: '12px',
-                              fontSize: '0.72rem',
-                              fontWeight: 700
-                            }}>
-                              <ShieldAlert size={12} />
-                              <span>Not Enrolled (Blocked)</span>
-                            </span>
-                          )}
+                          <X size={12} strokeWidth={2} />
                         </button>
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        {s.has_face_profile ? (
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                            <button
-                              type="button"
-                              onClick={() => setFaceModalStudent(s)}
-                              className="btn btn-sm"
-                              style={{
-                                padding: '3px 8px',
-                                fontSize: '0.72rem',
-                                background: 'rgba(16, 185, 129, 0.15)',
-                                color: '#10b981',
-                                border: '1px solid rgba(16, 185, 129, 0.3)',
-                                borderRadius: '12px',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                cursor: 'pointer'
-                              }}
-                              title="Face biometric enrolled. Click to re-scan/update."
-                            >
-                              <ShieldCheck size={12} />
-                              <span>Enrolled</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleClearFace(s)}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                color: '#94a3b8',
-                                cursor: 'pointer',
-                                padding: '2px',
-                                display: 'inline-flex',
-                                alignItems: 'center'
-                              }}
-                              title="Clear face biometric data"
-                            >
-                              <X size={12} />
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setFaceModalStudent(s)}
-                            className="btn btn-sm btn-secondary"
-                            style={{
-                              padding: '3px 8px',
-                              fontSize: '0.72rem',
-                              borderRadius: '12px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              cursor: 'pointer'
-                            }}
-                            title="Register face biometric for this student"
-                          >
-                            <Camera size={12} />
-                            <span>Register Face</span>
-                          </button>
-                        )}
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Phone size={13} style={{ color: 'var(--text-muted)' }} />
-                          <span>{s.guardian_contact || s.student_phone || 'No Contact'}</span>
-                        </div>
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        <div style={{ display: 'inline-flex', gap: '6px' }}>
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            style={{ padding: '5px 8px' }}
-                            title="Edit Student"
-                            onClick={() => openEditModal(s)}
-                          >
-                            <Edit size={14} />
-                          </button>
-                          <button
-                            className="btn btn-danger btn-sm"
-                            style={{ padding: '5px 8px' }}
-                            title="Delete Student"
-                            onClick={() => handleDelete(s.id, s.full_name)}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setFaceModalStudent(s)}
+                        className="sres-btn sres-btn-secondary sres-btn-sm"
+                        style={{
+                          padding: '3px 8px',
+                          fontSize: '0.72rem',
+                          borderRadius: '12px'
+                        }}
+                        title="Register face biometric for this student"
+                      >
+                        <Camera size={12} strokeWidth={1.8} />
+                        <span>Register Face</span>
+                      </button>
+                    )}
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Phone size={13} strokeWidth={1.8} style={{ color: 'var(--text-muted)' }} />
+                      <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                        {s.guardian_contact || s.student_phone || 'No Contact'}
+                      </span>
+                    </div>
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    <div style={{ display: 'inline-flex', gap: '6px' }}>
+                      <button
+                        type="button"
+                        className="sres-btn sres-btn-secondary sres-btn-sm"
+                        style={{ padding: '6px 8px' }}
+                        title="Edit Student"
+                        onClick={() => openEditModal(s)}
+                      >
+                        <Edit size={13} strokeWidth={1.8} />
+                      </button>
+                      <button
+                        type="button"
+                        className="sres-btn sres-btn-danger sres-btn-sm"
+                        style={{ padding: '6px 8px' }}
+                        title="Delete Student"
+                        onClick={() => handleDelete(s.id, s.full_name)}
+                      >
+                        <Trash2 size={13} strokeWidth={1.8} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })
+          )}
+        </DataTable>
+      </SectionCard>
 
       {/* Requirement 10: Setup Class Roster & Student Names Modal */}
       <Modal 
@@ -1321,6 +1357,13 @@ export default function Students() {
           setFaceModalStudent(null);
           loadStudents();
         }}
+      />
+
+      {/* Student QR Code Badge View Modal */}
+      <StudentQrModal
+        isOpen={!!selectedQrStudent}
+        student={selectedQrStudent}
+        onClose={() => setSelectedQrStudent(null)}
       />
     </div>
   );

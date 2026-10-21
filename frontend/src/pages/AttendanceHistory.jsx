@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { apiFetch } from '../utils/api';
-import StatCard from '../components/StatCard';
+import { apiFetch, downloadWithAuth } from '../utils/api';
+import { 
+  PageTitle, 
+  Card, 
+  SectionCard, 
+  StatCard, 
+  DataTable, 
+  StatusBadge, 
+  Button 
+} from '../components/ui';
 import { 
   Calendar, 
   Search, 
@@ -147,13 +155,13 @@ export default function AttendanceHistory() {
 
   // Export handlers
   const handleExportAdminCSV = () => {
-    window.open('/api/history/export?role=admin', '_blank');
+    downloadWithAuth('/api/history/export?role=admin', `admin_history_${new Date().toISOString().split('T')[0]}.csv`);
   };
 
   const handleExportTeacherCSV = () => {
     const from = selectedDate === 'ALL' ? '2026-01-01' : selectedDate;
     const to = selectedDate === 'ALL' ? new Date().toISOString().split('T')[0] : selectedDate;
-    window.open(`/api/attendance/export?from=${from}&to=${to}`, '_blank');
+    downloadWithAuth(`/api/attendance/export?from=${from}&to=${to}`, `attendance_history_${from}_${to}.csv`);
   };
 
   // ========================================================
@@ -531,60 +539,65 @@ export default function AttendanceHistory() {
   // RENDER: TEACHER VIEW
   // ========================================================
   return (
-    <div>
-      {/* Teacher Header Card */}
-      <div className="card" style={{ background: 'var(--surface-gradient)', border: '1px solid var(--primary-border)', marginBottom: '20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Calendar size={24} style={{ color: 'var(--primary)' }} />
-              <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--primary)', margin: 0 }}>
-                Teacher Historical Attendance & Classroom Activity
-              </h2>
-            </div>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-              Historical attendance check-ins, scans, late arrivals, and classroom activity updates happening on the Teacher side.
-            </p>
+    <div className="sres-history-page">
+      {/* 1. Page Header with Tag and Actions */}
+      <PageTitle
+        title="Attendance History"
+        emoji="📅"
+        tag="Classroom Activity & Historical Attendance Log"
+        icon={Calendar}
+        action={
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={RefreshCw}
+              onClick={loadTeacherHistory}
+              disabled={loading}
+            >
+              Refresh
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              icon={Download}
+              onClick={handleExportTeacherCSV}
+            >
+              Export CSV
+            </Button>
           </div>
-
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <button className="btn btn-secondary btn-sm" onClick={loadTeacherHistory} disabled={loading}>
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-              <span>Refresh</span>
-            </button>
-            <button className="btn btn-primary btn-sm" onClick={handleExportTeacherCSV}>
-              <Download size={14} />
-              <span>Export CSV</span>
-            </button>
-          </div>
-        </div>
-      </div>
+        }
+      />
 
       {/* Teacher Stat Cards */}
       <div className="stats-grid" style={{ marginBottom: '24px' }}>
         <StatCard
           label={selectedDate === 'ALL' ? 'Total Logged Records' : 'Total Present Today'}
           value={recordedCount}
-          icon={<UserCheck size={22} />}
-          color="#16a34a"
+          icon={UserCheck}
+          color="#10B981"
+          bgTint="#ECFDF5"
         />
         <StatCard
           label="On-Time Arrivals"
           value={totalPresent}
-          icon={<CheckCircle size={22} />}
-          color="#0284c7"
+          icon={CheckCircle}
+          color="#0284C7"
+          bgTint="#E0F2FE"
         />
         <StatCard
           label="Late Arrivals"
           value={totalLate}
-          icon={<Clock size={22} />}
-          color="#d97706"
+          icon={Clock}
+          color="#F59E0B"
+          bgTint="#FFFBEB"
         />
         <StatCard
           label="Attendance Rate"
           value={`${attendanceRate}%`}
-          icon={<TrendingUp size={22} />}
-          color="#880e4f"
+          icon={TrendingUp}
+          color="#C2185B"
+          bgTint="#FDF2F6"
         />
       </div>
 

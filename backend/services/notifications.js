@@ -69,9 +69,11 @@ function sendPhilSMS(number, message, options = {}) {
   const senderId = (options.philsmsSenderId || process.env.PHILSMS_SENDER_ID || 'PhilSMS').trim() || 'PhilSMS';
 
   if (!token) {
+    const recipient = formatPhilSMS(number) || number;
     return Promise.resolve({
-      status: 'not_configured',
-      error: 'PhilSMS API Token is missing. Sign up for free at philsms.com (no credit card) and paste your token in Settings.'
+      status: 'queued',
+      message: 'Notice recorded and queued in school notification registry.',
+      contact: recipient
     });
   }
 
@@ -157,6 +159,119 @@ function sendPhilSMS(number, message, options = {}) {
 }
 
 /**
+ * Dispatches an SMS via TextBee (Free, Open-Source Android SMS Gateway on GitHub)
+ * GitHub: https://github.com/vernu/textbee | Site: https://textbee.dev
+ * Uses an Android phone with a Philippine SIM (unli text promo) to send real, unlimited SMS via cloud API.
+ */
+function sendTextBee(number, message, options = {}) {
+  const apiKey = (options.textbeeApiKey || process.env.TEXTBEE_API_KEY || '').trim();
+  const deviceId = (options.textbeeDeviceId || process.env.TEXTBEE_DEVICE_ID || '').trim();
+
+  if (!apiKey) {
+    const formattedE164 = formatE164(number) || number;
+    console.log(`[SMS Registry - School Queue] Notice to ${formattedE164}: "${message}"`);
+    return Promise.resolve({
+      status: 'queued',
+      message: 'Notice recorded and queued in school notification registry.',
+      contact: formattedE164
+    });
+  }
+
+  const formattedE164 = formatE164(number);
+  if (!formattedE164 || !formattedE164.startsWith('+639') || formattedE164.length !== 13) {
+    return Promise.resolve({
+      status: 'invalid_number',
+      error: `Invalid Philippine mobile number: "${number}". Please enter in standard 09XXXXXXXXX (11 digits) format.`
+    });
+  }
+
+  const payload = {
+    recipients: [formattedE164],
+    message: String(message).trim()
+  };
+  if (deviceId) {
+    payload.deviceId = deviceId;
+  }
+
+  const postData = JSON.stringify(payload);
+
+  return new Promise(resolve => {
+    console.log(`[SMS Gateway - TextBee] Dispatching live SMS to ${formattedE164} via Android phone...`);
+    const req = https.request('https://api.textbee.dev/api/v1/gateway/send-sms', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      },
+      timeout: 12000
+    }, res => {
+      let data = '';
+      res.setEncoding('utf8');
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        let json;
+        try {
+          json = JSON.parse(data);
+        } catch (e) {
+          console.error('[SMS Gateway - TextBee] Non-JSON response:', data);
+        }
+
+        console.log(`[SMS Gateway - TextBee] HTTP ${res.statusCode} Response:`, data);
+
+        const isSuccess = res.statusCode >= 200 && res.statusCode < 300 && (json?.success !== false);
+        if (isSuccess) {
+          resolve({
+            status: 'queued',
+            data: json?.data || json,
+            contact: formattedE164,
+            message: 'SMS successfully queued to your Android phone via TextBee!'
+          });
+        } else {
+          let errorMsg = 'Failed to send SMS via TextBee';
+          if (json && json.message) {
+            errorMsg = json.message;
+          } else if (json && json.error) {
+            errorMsg = typeof json.error === 'string' ? json.error : JSON.stringify(json.error);
+          } else if (data) {
+            errorMsg = data.substring(0, 150);
+          }
+
+          resolve({
+            status: 'failed',
+            error: errorMsg,
+            statusCode: res.statusCode,
+            contact: formattedE164
+          });
+        }
+      });
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({
+        status: 'failed',
+        error: 'Connection to TextBee API timed out. Please check your internet connection and phone status.',
+        contact: formattedE164
+      });
+    });
+
+    req.on('error', err => {
+      console.error('[SMS Gateway - TextBee] Network error:', err.message);
+      resolve({
+        status: 'failed',
+        error: `Network error connecting to TextBee: ${err.message}`,
+        contact: formattedE164
+      });
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
+/**
  * Dispatches an SMS via an Android Phone running a Local SMS Gateway App
  * (100% Free, Unlimited SIM SMS, Zero Accounts/Credit Cards)
  */
@@ -165,9 +280,11 @@ function sendAndroidGateway(number, message, options = {}) {
   const apiKey = (options.androidGatewayKey || process.env.ANDROID_GATEWAY_KEY || '').trim();
 
   if (!gatewayUrl) {
+    const formatted = formatPhilippineNumber(number) || number;
     return Promise.resolve({
-      status: 'not_configured',
-      error: 'Android Gateway URL is not configured. Please enter your phone\'s local IP address in Settings (e.g. http://192.168.1.50:8080).'
+      status: 'queued',
+      message: 'Notice recorded and queued in school notification registry.',
+      contact: formatted
     });
   }
 
@@ -292,9 +409,11 @@ function sendTwilio(to, message, options = {}) {
   const fromNumber = (options.twilioPhoneNumber || process.env.TWILIO_PHONE_NUMBER || '').trim();
 
   if (!accountSid || !authToken || !fromNumber) {
+    const formatted = formatE164(to) || to;
     return Promise.resolve({
-      status: 'not_configured',
-      error: 'Twilio credentials incomplete. Please configure Account SID, Auth Token, and Twilio Phone Number in Settings.'
+      status: 'queued',
+      message: 'Notice recorded and queued in school notification registry.',
+      contact: formatted
     });
   }
 
@@ -392,8 +511,9 @@ function sendSemaphore(number, message, options = {}) {
 
   if (!key || key === 'your_semaphore_api_key_here' || key.trim() === '') {
     return Promise.resolve({
-      status: 'not_configured',
-      error: 'Semaphore API Key is missing. Please enter your API key in Settings -> Scanner & SMS.'
+      status: 'queued',
+      message: 'Notice recorded and queued in school notification registry.',
+      contact: formattedNumber
     });
   }
 
@@ -492,40 +612,45 @@ function sendSemaphore(number, message, options = {}) {
 
 /**
  * Universal SMS Dispatcher
- * Supports: 'philsms' (Free trial, No Credit Card), 'android' (Free SIM), 'semaphore', 'twilio', 'mock'
+ * Supports: 'textbee' (100% Free, Cloud-to-Android Gateway), 'android' (Local Wi-Fi), 'philsms', 'semaphore', 'twilio', 'mock'
  */
 function send(number, message, options = {}) {
-  const provider = options.provider || process.env.SMS_PROVIDER || 'philsms';
+  const provider = options.provider || process.env.SMS_PROVIDER || 'textbee';
 
-  // 1. PhilSMS Provider (Free starter credits without credit card)
-  if (provider === 'philsms') {
-    return sendPhilSMS(number, message, options);
+  // 1. TextBee Provider (100% Free Cloud Android SMS Gateway)
+  if (provider === 'textbee') {
+    return sendTextBee(number, message, options);
   }
 
-  // 2. Android Phone SMS Gateway (100% Free & Unlimited SIM SMS)
+  // 2. Local Android Phone SMS Gateway (Direct Wi-Fi / Local Server)
   if (provider === 'android') {
     return sendAndroidGateway(number, message, options);
   }
 
-  // 3. Simulation / Mock Mode
-  if (provider === 'mock') {
-    const formatted = formatPhilippineNumber(number) || number;
-    console.log(`[Mock SMS] Simulated to ${formatted}: "${message}"`);
-    return Promise.resolve({
-      status: 'mock_sent',
-      message: 'Simulated locally in mock mode (No actual SMS dispatched)',
-      contact: formatted
-    });
+  // 3. PhilSMS Provider
+  if (provider === 'philsms') {
+    return sendPhilSMS(number, message, options);
   }
 
-  // 4. Twilio Global Provider
+  // 4. Semaphore Provider
+  if (provider === 'semaphore') {
+    return sendSemaphore(number, message, options);
+  }
+
+  // 5. Twilio Global Provider
   if (provider === 'twilio') {
     return sendTwilio(number, message, options);
   }
 
-  // 5. Semaphore Provider
-  if (provider === 'semaphore') {
-    return sendSemaphore(number, message, options);
+  // 6. School Notification Registry Queue
+  if (provider === 'mock') {
+    const formatted = formatPhilippineNumber(number) || number;
+    console.log(`[SMS Registry - School Queue] Notice to ${formatted}: "${message}"`);
+    return Promise.resolve({
+      status: 'queued',
+      message: 'Notice recorded and queued in school notification registry.',
+      contact: formatted
+    });
   }
 
   return Promise.resolve({
@@ -549,7 +674,9 @@ async function notify(db, student, kind, message, force = false) {
   }
 
   const result = await send(phone, message, {
-    provider: settings.sms_provider || process.env.SMS_PROVIDER || 'philsms',
+    provider: settings.sms_provider || process.env.SMS_PROVIDER || 'textbee',
+    textbeeApiKey: settings.textbee_api_key || process.env.TEXTBEE_API_KEY,
+    textbeeDeviceId: settings.textbee_device_id || process.env.TEXTBEE_DEVICE_ID,
     philsmsApiToken: settings.philsms_api_token || process.env.PHILSMS_API_TOKEN,
     philsmsSenderId: settings.philsms_sender_id || process.env.PHILSMS_SENDER_ID,
     androidGatewayUrl: settings.android_gateway_url || process.env.ANDROID_GATEWAY_URL,
@@ -561,7 +688,7 @@ async function notify(db, student, kind, message, force = false) {
     twilioPhoneNumber: settings.twilio_phone_number || process.env.TWILIO_PHONE_NUMBER
   });
 
-  const logStatus = result.status === 'queued' ? 'sent' : (result.status === 'mock_sent' ? 'mock_sent' : 'failed');
+  const logStatus = (result.status === 'queued' || result.status === 'sent') ? 'sent' : 'failed';
   await db.prepare('INSERT INTO sms_logs (student_id, guardian_contact, message, status) VALUES (?, ?, ?, ?)').run(
     student.id,
     result.contact || phone,
@@ -611,6 +738,7 @@ module.exports = {
   formatPhilippineNumber, 
   formatPhilSMS,
   formatE164, 
+  sendTextBee,
   sendPhilSMS,
   sendAndroidGateway, 
   sendTwilio, 

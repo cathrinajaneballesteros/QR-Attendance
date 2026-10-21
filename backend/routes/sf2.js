@@ -2,19 +2,7 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 
-async function ensureSampleHalfDayAbsences(db) {
-    try {
-        var existing = await db.prepare("SELECT COUNT(*) as c FROM attendance WHERE status IN ('am_absent', 'pm_absent')").get();
-        if (!existing || Number(existing.c) === 0) {
-            await db.prepare("UPDATE attendance SET status = 'am_absent' WHERE student_id = 3 AND date = '2026-10-06'").run();
-            await db.prepare("UPDATE attendance SET status = 'pm_absent' WHERE student_id = 4 AND date = '2026-10-07'").run();
-            await db.prepare("UPDATE attendance SET status = 'am_absent' WHERE student_id = 15 AND date = '2026-10-06'").run();
-            await db.prepare("UPDATE attendance SET status = 'pm_absent' WHERE student_id = 17 AND date = '2026-10-07'").run();
-        }
-    } catch (e) {
-        console.warn('Notice ensuring sample absences:', e.message);
-    }
-}
+// Note: /seed-sample-absences is kept as an explicit debug route if called directly, but no longer mutates database on standard report queries.
 
 router.all('/seed-sample-absences', async function(req, res) {
     try {
@@ -33,7 +21,6 @@ router.all('/seed-sample-absences', async function(req, res) {
 router.get('/report', auth, async function(req, res) {
     try {
         var db = req.app.get('db');
-        await ensureSampleHalfDayAbsences(db);
         var month = req.query.month || new Date().toISOString().substring(0, 7);
         if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: 'Invalid month format' });
 
@@ -52,8 +39,28 @@ router.get('/report', auth, async function(req, res) {
 
         var students = (await db.prepare(studentsSql).all(...studentsParams)) || [];
         var attendance = (await db.prepare(attSql).all(...attParams)) || [];
+
+        var teacherName = (req.user && req.user.full_name) || 'TIFANNY MARTIN ARAGON';
+        if (req.user && req.user.role === 'teacher' && !req.user.full_name) {
+            var teacherRow = await db.prepare('SELECT full_name FROM users WHERE id = ?').get(req.user.id);
+            if (teacherRow && teacherRow.full_name) teacherName = teacherRow.full_name;
+        }
+        teacherName = (teacherName || 'TIFANNY MARTIN ARAGON').toUpperCase();
+
         var { computeSF2ReportData } = require('../services/sf2Excel');
-        var data = computeSF2ReportData({ month: month, students: students, attendance: attendance });
+        var data = computeSF2ReportData({
+            month: month,
+            students: students,
+            attendance: attendance,
+            schoolInfo: {
+                schoolName: 'Sta. Rosa ES',
+                schoolId: '102056',
+                gradeLevel: 'Grade 6',
+                section: 'GREAT GENIUSES',
+                adviser: teacherName,
+                principal: 'MC RIZ TEMPLETON BUEN'
+            }
+        });
         res.json(data);
     } catch (error) {
         console.error('SF2 report error:', error.message);
@@ -91,7 +98,6 @@ router.get('/summary', auth, async function(req, res) {
 router.get('/download', auth, async function(req, res) {
     try {
         var db = req.app.get('db');
-        await ensureSampleHalfDayAbsences(db);
         var month = req.query.month || new Date().toISOString().substring(0, 7);
         if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: 'Invalid month' });
         var monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -114,9 +120,28 @@ router.get('/download', auth, async function(req, res) {
         var students = (await db.prepare(studentsSql).all(...studentsParams)) || [];
         var attendance = (await db.prepare(attSql).all(...attParams)) || [];
 
+        var teacherName = (req.user && req.user.full_name) || 'TIFANNY MARTIN ARAGON';
+        if (req.user && req.user.role === 'teacher' && !req.user.full_name) {
+            var teacherRow = await db.prepare('SELECT full_name FROM users WHERE id = ?').get(req.user.id);
+            if (teacherRow && teacherRow.full_name) teacherName = teacherRow.full_name;
+        }
+        teacherName = (teacherName || 'TIFANNY MARTIN ARAGON').toUpperCase();
+
         // Uses the official SF2 layout from templates/sf2_template.xlsx ("excel format.xls").
         var { buildSF2Workbook } = require('../services/sf2Excel');
-        var workbook = await buildSF2Workbook({ month: month, students: students, attendance: attendance });
+        var workbook = await buildSF2Workbook({
+            month: month,
+            students: students,
+            attendance: attendance,
+            schoolInfo: {
+                schoolName: 'Sta. Rosa ES',
+                schoolId: '102056',
+                gradeLevel: 'Grade 6',
+                section: 'GREAT GENIUSES',
+                adviser: teacherName,
+                principal: 'MC RIZ TEMPLETON BUEN'
+            }
+        });
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', 'attachment; filename=SF2_Report_' + monthName + '_' + parts[0] + '.xlsx');

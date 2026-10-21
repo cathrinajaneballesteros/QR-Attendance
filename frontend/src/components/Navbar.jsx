@@ -40,25 +40,26 @@ export default function Navbar() {
   const navItems = [];
   if (isAdmin) {
     navItems.push(
-      { to: '/admin', label: 'Admin Dashboard', icon: <LayoutDashboard size={17} /> },
-      { to: '/manage-teachers', label: 'Manage Teachers', icon: <UserCheck size={17} /> },
-      { to: '/student-accounts', label: 'Student Accounts', icon: <GraduationCap size={17} /> },
-      { to: '/history', label: 'Historical Data', icon: <History size={17} /> }
+      { to: '/admin/dashboard', label: 'Admin Dashboard', icon: <LayoutDashboard size={17} /> },
+      { to: '/admin/teachers', label: 'Manage Teachers', icon: <UserCheck size={17} /> },
+      { to: '/admin/student-accounts', label: 'Student Accounts', icon: <GraduationCap size={17} /> },
+      { to: '/admin/history', label: 'Historical Data', icon: <History size={17} /> },
+      { to: '/admin/settings', label: 'Settings', icon: <Sliders size={17} /> }
     );
   } else if (isTeacher) {
     navItems.push(
-      { to: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={17} /> },
-      { to: '/attendance', label: 'Attendance', icon: <QrCode size={17} /> },
-      { to: '/history', label: 'Historical Data', icon: <History size={17} /> },
-      { to: '/students', label: 'Students', icon: <Users size={17} /> },
-      { to: '/sf2-report', label: 'SF2 Report', icon: <FileSpreadsheet size={17} /> },
-      { to: '/sf2-progress', label: 'SF2 Progress', icon: <ListTodo size={17} /> },
-      { to: '/sms-logs', label: 'SMS Logs', icon: <MessageSquare size={17} /> },
-      { to: '/settings', label: 'Settings', icon: <Sliders size={17} /> }
+      { to: '/teacher/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={17} /> },
+      { to: '/teacher/attendance', label: 'Attendance', icon: <QrCode size={17} /> },
+      { to: '/teacher/history', label: 'Historical Data', icon: <History size={17} /> },
+      { to: '/teacher/students', label: 'Students', icon: <Users size={17} /> },
+      { to: '/teacher/sf2-report', label: 'SF2 Report', icon: <FileSpreadsheet size={17} /> },
+      { to: '/teacher/sf2-progress', label: 'SF2 Progress', icon: <ListTodo size={17} /> },
+      { to: '/teacher/sms-logs', label: 'SMS Logs', icon: <MessageSquare size={17} /> },
+      { to: '/teacher/settings', label: 'Settings', icon: <Sliders size={17} /> }
     );
   } else if (isStudent) {
     navItems.push(
-      { to: '/student-portal', label: 'Student Portal', icon: <GraduationCap size={17} /> }
+      { to: '/student/portal', label: 'Student Portal', icon: <GraduationCap size={17} /> }
     );
   }
 
@@ -67,7 +68,7 @@ export default function Navbar() {
       <div className="navbar-inner">
         <div className="navbar-top">
           <Link 
-            to={isAdmin ? '/admin' : isStudent ? '/student-portal' : '/dashboard'} 
+            to={isAdmin ? '/admin/dashboard' : isStudent ? '/student/portal' : '/teacher/dashboard'} 
             className="brand-wrapper"
             onClick={() => setMobileMenuOpen(false)}
           >

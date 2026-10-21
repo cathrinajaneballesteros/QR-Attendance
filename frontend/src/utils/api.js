@@ -34,3 +34,37 @@ export async function apiFetch(url, options = {}) {
 
   return response;
 }
+
+export async function downloadWithAuth(url, defaultFilename = 'download.csv') {
+  const token = localStorage.getItem('token');
+  const separator = url.includes('?') ? '&' : '?';
+  const authenticatedUrl = token ? `${url}${separator}token=${encodeURIComponent(token)}` : url;
+
+  try {
+    const res = await apiFetch(url);
+    if (!res.ok) {
+      window.location.href = authenticatedUrl;
+      return;
+    }
+    const blob = await res.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+
+    const disposition = res.headers.get('content-disposition');
+    let filename = defaultFilename;
+    if (disposition && disposition.includes('filename=')) {
+      const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+      if (match && match[1]) {
+        filename = match[1].replace(/['"]/g, '').trim();
+      }
+    }
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 2000);
+  } catch (err) {
+    window.location.href = authenticatedUrl;
+  }
+}

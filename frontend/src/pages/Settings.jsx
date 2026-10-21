@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { apiFetch } from '../utils/api';
+import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { 
   Sliders, 
@@ -28,10 +29,21 @@ import {
   EyeOff,
   Send,
   Smartphone,
-  Wifi
+  Wifi,
+  Scan,
+  UserCheck
 } from 'lucide-react';
+import {
+  PageTitle,
+  Card,
+  SectionCard,
+  Button,
+  StatusBadge
+} from '../components/ui';
 
 export default function Settings() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const { theme, changeTheme, themes } = useTheme();
 
   const [activeTab, setActiveTab] = useState('classroom'); // classroom | schedule | geofence | notifications | appearance | student_portal
@@ -54,7 +66,9 @@ export default function Settings() {
     qr_start: '',
     qr_end: '',
     sms_enabled: '0',
-    sms_provider: 'philsms',
+    sms_provider: 'textbee',
+    textbee_api_key: '',
+    textbee_device_id: '',
     philsms_api_token: '',
     philsms_sender_id: 'PhilSMS',
     android_gateway_url: '',
@@ -64,7 +78,8 @@ export default function Settings() {
     twilio_account_sid: '',
     twilio_auth_token: '',
     twilio_phone_number: '',
-    student_face_verification: '1'
+    student_face_verification: '1',
+    scanner_verification_mode: 'both'
   });
 
   const [initialSettings, setInitialSettings] = useState(null);
@@ -79,13 +94,11 @@ export default function Settings() {
   const [testPhone, setTestPhone] = useState('');
   const [testResult, setTestResult] = useState(null);
   const [testingSms, setTestingSms] = useState(false);
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [showTwilioToken, setShowTwilioToken] = useState(false);
-  const [showPhilSmsToken, setShowPhilSmsToken] = useState(false);
+  const [showTextbeeKey, setShowTextbeeKey] = useState(false);
 
   const handleTestSMS = async () => {
     if (!testPhone.trim()) {
-      setTestResult({ error: 'Please enter a mobile phone number to test.' });
+      setTestResult({ error: 'Please enter a Philippine mobile phone number to test (e.g. 09171234567).' });
       return;
     }
     setTestingSms(true);
@@ -94,22 +107,15 @@ export default function Settings() {
       const res = await apiFetch('/api/sms/test', {
         method: 'POST',
         body: JSON.stringify({
-          phone: testPhone,
-          provider: settings.sms_provider || 'philsms',
-          philsmsApiToken: settings.philsms_api_token || '',
-          philsmsSenderId: settings.philsms_sender_id || '',
-          androidGatewayUrl: settings.android_gateway_url || '',
-          androidGatewayKey: settings.android_gateway_key || '',
-          apiKey: settings.semaphore_api_key || '',
-          senderName: settings.sms_sender_name || '',
-          twilioAccountSid: settings.twilio_account_sid || '',
-          twilioAuthToken: settings.twilio_auth_token || '',
-          twilioPhoneNumber: settings.twilio_phone_number || ''
+          phone: testPhone.trim(),
+          provider: 'textbee',
+          textbeeApiKey: settings.textbee_api_key || '',
+          textbeeDeviceId: settings.textbee_device_id || ''
         })
       });
       const data = await res.json();
       if (res.ok) {
-        setTestResult({ success: true, message: data.message, isMock: data.isMock, contact: data.contact, provider: data.provider });
+        setTestResult({ success: true, message: data.message, contact: data.contact, provider: 'textbee' });
       } else {
         setTestResult({ error: data.error || 'Failed to send test SMS.' });
       }
@@ -254,42 +260,32 @@ export default function Settings() {
   };
 
   return (
-    <div>
-      {/* Top Classroom Policy Status HUD */}
-      <div className="settings-hud">
-        <div>
-          <div style={{ fontSize: '0.74rem', opacity: 0.9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Current Classroom Attendance Policy
-          </div>
-          <div style={{ fontSize: '1.25rem', fontWeight: 800, marginTop: '2px' }}>
-            {settings.room_name || 'Room 101 - Grade 6 Great Geniuses'}
-          </div>
-        </div>
-
-        <div className="hud-chips">
-          <span className={`hud-chip ${settings.attendance_mode === 'flipped' ? 'active-flipped' : 'active-onsite'}`}>
-            {settings.attendance_mode === 'flipped' ? <Laptop size={13} /> : <MapPin size={13} />}
-            <span>{settings.attendance_mode === 'flipped' ? 'Online Mode (Remote)' : 'Onsite Mode'}</span>
-          </span>
-
-          <span className="hud-chip">
-            <Clock size={13} />
-            <span>Bell: {formatTime12(settings.school_start)}</span>
-          </span>
-
-          <span className="hud-chip">
-            <Clock size={13} />
-            <span>Late after: {formatTime12(settings.late_after)}</span>
-          </span>
-
-          {settings.sms_enabled === '1' && (
-            <span className="hud-chip" style={{ background: 'rgba(233, 30, 99, 0.25)', borderColor: 'rgba(244, 114, 182, 0.4)' }}>
-              <MessageSquare size={13} />
-              <span>SMS Alerts Active</span>
+    <div className="sres-settings-page">
+      {/* 1. Page Header with Tag and Status chips */}
+      <PageTitle
+        title="Settings & Policies"
+        emoji="⚙️"
+        tag={settings.room_name || 'Room 101 - Grade 6 Great Geniuses'}
+        icon={Sliders}
+        action={
+          <div className="hud-chips" style={{ margin: 0 }}>
+            <span className={`hud-chip ${settings.attendance_mode === 'flipped' ? 'active-flipped' : 'active-onsite'}`}>
+              {settings.attendance_mode === 'flipped' ? <Laptop size={13} strokeWidth={2} /> : <MapPin size={13} strokeWidth={2} />}
+              <span>{settings.attendance_mode === 'flipped' ? 'Online Mode' : 'Onsite Mode'}</span>
             </span>
-          )}
-        </div>
-      </div>
+
+            <span className="hud-chip">
+              <Clock size={13} strokeWidth={2} />
+              <span>Bell: {formatTime12(settings.school_start)}</span>
+            </span>
+
+            <span className="hud-chip">
+              <Clock size={13} strokeWidth={2} />
+              <span>Late: {formatTime12(settings.late_after)}</span>
+            </span>
+          </div>
+        }
+      />
 
       {alert && (
         <div className={`alert ${alert.type === 'error' ? 'alert-error' : 'alert-success'}`}>
@@ -805,6 +801,96 @@ export default function Settings() {
             />
           </div>
 
+          {/* Scanner Verification Mode Card */}
+          <div style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border)',
+            borderRadius: '16px',
+            padding: '20px',
+            marginBottom: '16px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexWrap: 'wrap', gap: '8px' }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: '0.96rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ShieldCheck size={20} color="var(--primary)" />
+                  <span>Default Scanner Verification Mode</span>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Select the default verification workflow when opening the attendance scanner. You can also toggle this live on the scanner.
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+              {/* Option 1: Both (QR + Face 2FA) */}
+              <div 
+                onClick={() => setSettings({ ...settings, scanner_verification_mode: 'both' })}
+                style={{
+                  border: (settings.scanner_verification_mode || 'both') === 'both' ? '2px solid #7c3aed' : '1.5px solid var(--border)',
+                  background: (settings.scanner_verification_mode || 'both') === 'both' ? 'rgba(124, 58, 237, 0.06)' : 'var(--bg-card-subtle)',
+                  borderRadius: '12px',
+                  padding: '14px 16px',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <ShieldCheck size={18} color="#7c3aed" />
+                  <strong style={{ fontSize: '0.88rem', color: '#1e293b' }}>Both: QR + Face (2FA)</strong>
+                  <span className="badge badge-success" style={{ fontSize: '0.68rem', padding: '2px 6px', marginLeft: 'auto' }}>Recommended</span>
+                </div>
+                <p style={{ fontSize: '0.74rem', color: '#64748b', margin: 0, lineHeight: 1.45 }}>
+                  Requires scanning student QR code <strong>and</strong> matching their face via camera. Completely prevents proxy attendance.
+                </p>
+              </div>
+
+              {/* Option 2: Face Recognition Only */}
+              <div 
+                onClick={() => setSettings({ ...settings, scanner_verification_mode: 'face' })}
+                style={{
+                  border: settings.scanner_verification_mode === 'face' ? '2px solid #0284c7' : '1.5px solid var(--border)',
+                  background: settings.scanner_verification_mode === 'face' ? 'rgba(2, 132, 199, 0.06)' : 'var(--bg-card-subtle)',
+                  borderRadius: '12px',
+                  padding: '14px 16px',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <UserCheck size={18} color="#0284c7" />
+                  <strong style={{ fontSize: '0.88rem', color: '#1e293b' }}>Face Recognition Only</strong>
+                </div>
+                <p style={{ fontSize: '0.74rem', color: '#64748b', margin: 0, lineHeight: 1.45 }}>
+                  Touchless & contactless. Camera detects and recognizes students directly by face. No printed QR card needed.
+                </p>
+              </div>
+
+              {/* Option 3: QR Code Only */}
+              <div 
+                onClick={() => setSettings({ ...settings, scanner_verification_mode: 'qr' })}
+                style={{
+                  border: settings.scanner_verification_mode === 'qr' ? '2px solid #059669' : '1.5px solid var(--border)',
+                  background: settings.scanner_verification_mode === 'qr' ? 'rgba(5, 150, 105, 0.06)' : 'var(--bg-card-subtle)',
+                  borderRadius: '12px',
+                  padding: '14px 16px',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <QrCode size={18} color="#059669" />
+                  <strong style={{ fontSize: '0.88rem', color: '#1e293b' }}>QR Code Only</strong>
+                </div>
+                <p style={{ fontSize: '0.74rem', color: '#64748b', margin: 0, lineHeight: 1.45 }}>
+                  Fast barcode-only scanning. Face recognition is completely disabled. Suitable for dim lighting or low-power devices.
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Automated SMS Alerts Card */}
           <div className="settings-option-card">
             <div className="settings-option-info">
@@ -818,13 +904,222 @@ export default function Settings() {
                 </div>
               </div>
             </div>
-            <input
-              type="checkbox"
-              checked={settings.sms_enabled === '1'}
-              onChange={(e) => setSettings({ ...settings, sms_enabled: e.target.checked ? '1' : '0' })}
-              style={{ width: '22px', height: '22px', accentColor: 'var(--primary)', cursor: 'pointer' }}
-            />
+            {isAdmin ? (
+              <input
+                type="checkbox"
+                checked={settings.sms_enabled === '1'}
+                onChange={(e) => setSettings({ ...settings, sms_enabled: e.target.checked ? '1' : '0' })}
+                style={{ width: '22px', height: '22px', accentColor: 'var(--primary)', cursor: 'pointer' }}
+              />
+            ) : (
+              <span className={`badge ${settings.sms_enabled === '1' ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: '0.76rem', whiteSpace: 'nowrap' }}>
+                {settings.sms_enabled === '1' ? '✓ Active (Admin Configured)' : 'Disabled by Admin'}
+              </span>
+            )}
           </div>
+
+          {/* TEACHER VIEW: Read-Only Info Card (No configuration options) */}
+          {!isAdmin && (
+            <div style={{
+              background: '#f8fafc',
+              border: '1px solid var(--border)',
+              borderRadius: '12px',
+              padding: '16px',
+              marginTop: '16px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: '#fce4ec', color: '#c2185b', padding: '10px', borderRadius: '10px', display: 'flex' }}>
+                  <Smartphone size={22} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
+                    TextBee SMS Gateway (Managed by School Administrator)
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                    Automated guardian notifications for late arrivals, absences, and drop risks are sent through the school's central <strong>TextBee Android Gateway</strong>.
+                  </div>
+                </div>
+              </div>
+
+              <div style={{
+                marginTop: '12px',
+                paddingTop: '12px',
+                borderTop: '1px dashed var(--border)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '8px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className={`badge ${settings.textbee_api_key ? 'badge-success' : 'badge-warning'}`} style={{ fontSize: '0.74rem' }}>
+                    {settings.textbee_api_key ? '✓ Gateway Configured & Active' : '⚠ Gateway Awaiting Administrator Setup'}
+                  </span>
+                  <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                    Provider: <strong>TextBee (Free Android SIM Gateway)</strong>
+                  </span>
+                </div>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                  SMS gateway credentials and phone linking are managed exclusively in the Administrator portal.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* ADMINISTRATOR VIEW: Full TextBee Gateway Setup & Live Tester (Visible when SMS alerts are enabled) */}
+          {isAdmin && settings.sms_enabled === '1' && (
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '20px', marginTop: '16px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                    <div>
+                      <h3 style={{ fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Smartphone size={18} color="var(--primary)" />
+                        <span>TextBee SMS Gateway Configuration</span>
+                      </h3>
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px', marginBottom: 0 }}>
+                        Central school SMS gateway. Uses an Android smartphone with a Philippine SIM (unli-text promo) to send free parent alerts.
+                      </p>
+                    </div>
+                    <span className="badge badge-success" style={{ fontSize: '0.72rem', padding: '4px 10px' }}>
+                      100% Free • Unlimited SIM SMS
+                    </span>
+                  </div>
+
+                  {/* TextBee Setup Guide Box */}
+                  <div style={{
+                    background: '#f8fafc',
+                    border: '1px solid var(--border)',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    marginBottom: '18px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                      <strong style={{ fontSize: '0.86rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Sparkles size={16} color="var(--primary)" />
+                        <span>How to Connect TextBee (3 Steps)</span>
+                      </strong>
+                      <a 
+                        href="https://textbee.dev" 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}
+                      >
+                        <span>textbee.dev</span>
+                        <ExternalLink size={12} />
+                      </a>
+                    </div>
+
+                    <ol style={{ margin: '0', paddingLeft: '20px', fontSize: '0.78rem', color: '#475569', lineHeight: 1.6 }}>
+                      <li>Sign up for a free account at <a href="https://textbee.dev" target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', fontWeight: 700 }}>textbee.dev</a>.</li>
+                      <li>Install the free TextBee app on an Android phone loaded with a Philippine SIM (Globe, TM, Smart, TNT, or DITO with an unli-text promo).</li>
+                      <li>Scan the QR code in the app to link your phone, then copy your <strong>API Key</strong> and paste it below.</li>
+                    </ol>
+                  </div>
+
+                  {/* Form Grid for TextBee Credentials */}
+                  <div className="form-grid" style={{ marginBottom: '16px' }}>
+                    <div className="form-group">
+                      <label className="form-label">TextBee API Key *</label>
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type={showTextbeeKey ? 'text' : 'password'}
+                          className="form-input"
+                          placeholder="e.g. tb_live_xxxx or your API key"
+                          value={settings.textbee_api_key || ''}
+                          onChange={(e) => setSettings({ ...settings, textbee_api_key: e.target.value })}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowTextbeeKey(!showTextbeeKey)}
+                          style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                        >
+                          {showTextbeeKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Device ID (Optional)</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Leave blank to use default linked phone"
+                        value={settings.textbee_device_id || ''}
+                        onChange={(e) => setSettings({ ...settings, textbee_device_id: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Administrator Live Test SMS Console */}
+                  <div style={{
+                    background: '#ffffff',
+                    border: '1.5px solid var(--border)',
+                    borderRadius: '12px',
+                    padding: '16px',
+                    marginBottom: '20px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                      <div style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Send size={16} color="var(--primary)" />
+                        <span>Administrator Live Test SMS Console</span>
+                      </div>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        Verify TextBee SIM dispatching before sending to parents
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <div style={{ flex: '1 1 240px' }}>
+                        <input
+                          type="text"
+                          className="form-input"
+                          placeholder="Enter PH Mobile (e.g. 09171234567)"
+                          value={testPhone}
+                          onChange={(e) => setTestPhone(e.target.value)}
+                          style={{ fontSize: '0.85rem' }}
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={handleTestSMS}
+                        disabled={testingSms || !testPhone.trim()}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}
+                      >
+                        <Send size={14} className={testingSms ? 'animate-spin' : ''} />
+                        <span>{testingSms ? 'Dispatching Live SMS...' : 'Send Live Test SMS'}</span>
+                      </button>
+                    </div>
+
+                    {/* Test Feedback Box */}
+                    {testResult && (
+                      <div style={{ marginTop: '12px' }}>
+                        {testResult.success ? (
+                          <div className="alert alert-success" style={{ fontSize: '0.8rem', padding: '10px 14px' }}>
+                            <CheckCircle size={16} />
+                            <div>
+                              <strong>Test SMS Dispatched Successfully!</strong>
+                              <div style={{ fontSize: '0.74rem', marginTop: '2px' }}>
+                                {testResult.message} • Recipient: <code>{testResult.contact}</code> • Provider: <strong>TextBee</strong>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="alert alert-error" style={{ fontSize: '0.8rem', padding: '10px 14px' }}>
+                            <AlertCircle size={16} />
+                            <div>
+                              <strong>Failed to Dispatch Test SMS:</strong>
+                              <div style={{ fontSize: '0.74rem', marginTop: '2px' }}>{testResult.error}</div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
           {/* Optional Schedule Scan Window */}
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: '18px', marginTop: '14px' }}>

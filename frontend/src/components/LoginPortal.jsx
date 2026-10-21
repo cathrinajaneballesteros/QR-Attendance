@@ -1,123 +1,218 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
-  GraduationCap,
+  QrCode,
+  Users,
+  BarChart3,
   ShieldCheck,
-  UserCheck,
+  ShieldAlert,
+  KeyRound,
+  CalendarCheck,
+  FileSpreadsheet,
   Lock,
   User,
-  AlertCircle,
-  Loader2,
-  ArrowRight,
-  Scan,
   Eye,
   EyeOff,
-  QrCode,
-  FileSpreadsheet,
-  BellRing,
-  CalendarCheck,
-  ShieldAlert,
-  KeyRound
+  ArrowRight,
+  Loader2,
+  AlertCircle,
+  GraduationCap,
+  UserCheck,
+  Scan,
+  Info
 } from 'lucide-react';
+import { Input, Button } from './ui';
 import TeacherFaceScannerModal from './TeacherFaceScannerModal';
+import loginBg from '../assets/login-bg.jpg';
 
 /**
- * Dedicated, role-locked login portal.
- * Each portal (teacher / learner / admin) is rendered on its own route with no
- * ability to switch roles in-page. The backend additionally enforces `expectedRole`.
+ * Dedicated, role-locked login portals for Sta. Rosa Elementary School.
+ * Each portal (Faculty, Administrator, Learner) is accessed strictly by URL path:
+ * - Faculty: /login/teacher (or /login)
+ * - Admin: /login/admin
+ * - Learner: /login/student
+ *
+ * Each portal has a distinct theme color, eyebrow badge, feature highlights,
+ * and security policy notices to completely eliminate user confusion.
  */
-const PORTALS = {
+const ROLE_CONFIGS = {
   teacher: {
+    themeClass: 'sres-theme-teacher',
     apiRole: 'teacher',
-    theme: 'faculty',
-    eyebrow: 'Faculty & Class Adviser Portal',
+    badge: 'Faculty & Class Adviser Portal',
+    badgeIcon: GraduationCap,
     title: 'Faculty Sign In',
-    subtitle: 'Daily QR attendance, DepEd SF2 reporting, and learner monitoring.',
-    icon: GraduationCap,
+    subtitle: 'Sign in to manage classroom attendance & SF2 reports.',
+    headline1: 'Smarter Attendance.',
+    headline2: 'Better Learning.',
+    pitch: 'Empowering educators with rapid QR attendance tracking, automated DepEd SF2 calculations, and real-time learner monitoring.',
+    features: [
+      {
+        icon: QrCode,
+        title: 'Rapid QR Scanning',
+        desc: 'Fast, contact-free attendance in seconds during morning & afternoon sessions.'
+      },
+      {
+        icon: Users,
+        title: 'Section & Roster Control',
+        desc: 'Multi-adviser class isolation for Grade 6 Great Geniuses sections.'
+      },
+      {
+        icon: BarChart3,
+        title: 'DepEd SF2 Analytics',
+        desc: 'Official monthly attendance formulas, SARDO alerts, and instant Excel exports.'
+      }
+    ],
+    trustTitle: 'Trusted by Sta. Rosa Elementary School',
+    trustSubtitle: 'Safe • Secure • Reliable',
+    trustIcon: ShieldCheck,
     usernameLabel: 'DepEd Email or Username',
     usernamePlaceholder: 'name@deped.gov.ph',
     btnText: 'Sign In to Faculty Portal',
     notice: 'For authorized DepEd teaching personnel only.',
+    secondaryBtn: {
+      text: 'Scan Face to Sign In',
+      icon: Scan,
+      action: 'faceModal'
+    }
+  },
+  admin: {
+    themeClass: 'sres-theme-admin',
+    apiRole: 'admin',
+    badge: 'Restricted Administration Console',
+    badgeIcon: ShieldCheck,
+    title: 'Administrator Sign In',
+    subtitle: 'School Head & ICT Coordinator system management console.',
+    headline1: 'System Integrity.',
+    headline2: 'Total Governance.',
+    pitch: 'Centralized administrative authority for Sta. Rosa Elementary School. Oversee faculty accounts, section assignments, and school-wide attendance audits.',
     features: [
-      { icon: QrCode, text: 'Rapid QR code attendance scanning' },
-      { icon: FileSpreadsheet, text: 'Official DepEd SF2 monthly reports' },
-      { icon: BellRing, text: 'SARDO 5-day absence alerts & SMS' }
-    ]
+      {
+        icon: Users,
+        title: 'Faculty & Section Oversight',
+        desc: 'Provision teacher accounts, assign section advisers, and monitor access.'
+      },
+      {
+        icon: KeyRound,
+        title: 'Learner Account Provisioning',
+        desc: 'Secure LRN credentials management and institutional audit logging.'
+      },
+      {
+        icon: ShieldAlert,
+        title: 'Institutional Compliance',
+        desc: 'School-wide attendance compliance, DepEd division reporting, and backups.'
+      }
+    ],
+    trustTitle: 'DepEd SRES Administration',
+    trustSubtitle: 'Authorized Access Only • RA 10173 Compliant',
+    trustIcon: ShieldAlert,
+    usernameLabel: 'Administrator Username',
+    usernamePlaceholder: 'Enter administrator username',
+    btnText: 'Sign In to Admin Console',
+    notice: 'Authorized personnel only. Administrative actions are recorded in the security audit log.',
+    secondaryBtn: null
   },
   learner: {
+    themeClass: 'sres-theme-learner',
     apiRole: 'student',
-    theme: 'learner',
-    eyebrow: 'Learner Self Check-In Portal',
+    badge: 'Learner Self Check-In Portal',
+    badgeIcon: UserCheck,
     title: 'Learner Sign In',
     subtitle: 'Check in for class and view your personal attendance record.',
-    icon: UserCheck,
+    headline1: 'Every Day Counts.',
+    headline2: 'Never Miss Class.',
+    pitch: 'Welcome Grade 6 Great Geniuses learners! Sign in to verify your daily attendance record and view your personal attendance QR badge.',
+    features: [
+      {
+        icon: CalendarCheck,
+        title: 'Classroom Self Check-In',
+        desc: 'Confirm your daily attendance during scheduled class hours.'
+      },
+      {
+        icon: QrCode,
+        title: 'Personal QR Badge',
+        desc: 'Access your unique learner QR badge for morning and afternoon scanning.'
+      },
+      {
+        icon: FileSpreadsheet,
+        title: 'Attendance History',
+        desc: 'Check your monthly attendance stats and official records.'
+      }
+    ],
+    trustTitle: 'Grade 6 Great Geniuses',
+    trustSubtitle: 'Sta. Rosa Elementary School Learners',
+    trustIcon: UserCheck,
     usernameLabel: 'Learner Username or LRN',
     usernamePlaceholder: 'Username given by your adviser',
     btnText: 'Sign In to Learner Portal',
-    notice: 'Use the account provided by your class adviser. Do not share your password.',
-    features: [
-      { icon: CalendarCheck, text: 'Self check-in during class hours' },
-      { icon: QrCode, text: 'Your personal attendance QR code' },
-      { icon: FileSpreadsheet, text: 'Monthly attendance history' }
-    ]
-  },
-  admin: {
-    apiRole: 'admin',
-    theme: 'admin',
-    eyebrow: 'Restricted Administration Console',
-    title: 'Administrator Sign In',
-    subtitle: 'School Head & ICT Coordinator system management.',
-    icon: ShieldCheck,
-    usernameLabel: 'Administrator Username',
-    usernamePlaceholder: 'Administrator username',
-    btnText: 'Sign In to Admin Console',
-    notice: 'Authorized personnel only. Administrative sign-ins and actions are recorded in the activity log.',
-    features: [
-      { icon: UserCheck, text: 'Faculty account & section management' },
-      { icon: KeyRound, text: 'Learner account provisioning' },
-      { icon: ShieldAlert, text: 'School-wide attendance oversight' }
-    ]
+    notice: 'Use the credentials provided by your class adviser. Do not share your password.',
+    secondaryBtn: null
   }
 };
 
 export default function LoginPortal({ initialRole = 'teacher' }) {
-  const role = PORTALS[initialRole] ? initialRole : 'teacher';
-  const cfg = PORTALS[role];
-  const Icon = cfg.icon;
+  // Normalize role strictly based on route/prop (zero in-page role switching)
+  const roleKey = initialRole === 'admin' ? 'admin' : (initialRole === 'learner' || initialRole === 'student' ? 'learner' : 'teacher');
+  const cfg = ROLE_CONFIGS[roleKey];
+  const BadgeIcon = cfg.badgeIcon;
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showFaceModal, setShowFaceModal] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
 
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const isExpired = new URLSearchParams(location.search).get('expired');
 
+  // Load remembered username if present for this role
+  useEffect(() => {
+    const saved = localStorage.getItem(`sres_remembered_${roleKey}`);
+    if (saved) {
+      setUsername(saved);
+      setRememberMe(true);
+    }
+  }, [roleKey]);
+
   const redirectFor = (user) => {
-    if (user.role === 'admin') return '/admin';
-    if (user.role === 'student') return '/student-portal';
-    return '/dashboard';
+    if (user.role === 'admin') return '/admin/dashboard';
+    if (user.role === 'student') return '/student/portal';
+    return '/teacher/dashboard';
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+
     if (!username.trim() || !password) {
       setError('Please enter both your username and password.');
       return;
     }
+
+    if (rememberMe) {
+      localStorage.setItem(`sres_remembered_${roleKey}`, username.trim());
+    } else {
+      localStorage.removeItem(`sres_remembered_${roleKey}`);
+    }
+
     setLoading(true);
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), password, expectedRole: cfg.apiRole })
+        body: JSON.stringify({
+          username: username.trim(),
+          password,
+          expectedRole: cfg.apiRole
+        })
       });
+
       const data = await response.json();
       if (response.ok && data.token && data.user) {
         login(data.token, data.user);
@@ -133,141 +228,231 @@ export default function LoginPortal({ initialRole = 'teacher' }) {
   };
 
   return (
-    <div className={`portal-shell portal-${cfg.theme}`}>
-      {/* Institutional side panel */}
-      <aside className="portal-brand">
-        <div className="portal-brand-inner">
-          <div className="deped-masthead">
+    <div className={`sres-login-shell ${cfg.themeClass}`}>
+      {/* ========================================================
+          LEFT PANEL: Role-Themed Branding & Pitch
+         ======================================================== */}
+      <aside className="sres-login-brand">
+        {/* School photo with role-specific gradient overlay */}
+        <img
+          src={loginBg}
+          alt="Sta. Rosa Elementary School Campus"
+          className="sres-login-brand-bg"
+        />
+        <div className="sres-login-brand-overlay" />
+
+        {/* Soft decorative waves at bottom-left */}
+        <svg
+          className="sres-login-brand-waves"
+          viewBox="0 0 500 220"
+          preserveAspectRatio="none"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+        >
+          <path
+            d="M-40 220 C120 180, 240 240, 520 170 L520 220 Z"
+            fill="rgba(255, 255, 255, 0.05)"
+          />
+          <path
+            d="M-20 220 C100 150, 260 210, 520 130 L520 220 Z"
+            fill="rgba(255, 255, 255, 0.03)"
+          />
+        </svg>
+
+        <div className="sres-login-brand-inner">
+          {/* Top Logo Tile & School Masthead */}
+          <div className="sres-login-brand-top">
+            <div className="sres-login-logo-tile">
+              <QrCode size={24} strokeWidth={2.4} />
+            </div>
             <div>
-              <div className="deped-masthead-line">Republic of the Philippines</div>
-              <div className="deped-masthead-title">Department of Education</div>
-              <div className="deped-masthead-line">Region I • Schools Division of Ilocos Sur</div>
+              <div className="sres-login-brand-title">QR Attendance System</div>
+              <div className="sres-login-brand-subtitle">Sta. Rosa Elementary School</div>
             </div>
           </div>
 
-          <div className="portal-brand-hero">
-            <span className="portal-eyebrow">{cfg.eyebrow}</span>
-            <h2>Sta. Rosa Elementary School</h2>
-            <p>Daily QR Attendance &amp; School Form 2 Management System</p>
+          {/* Center Brand Hero Headline & Pitch */}
+          <div className="sres-login-brand-hero">
+            <h1 className="sres-login-headline-1">{cfg.headline1}</h1>
+            <h2 className="sres-login-headline-2">{cfg.headline2}</h2>
+            <p className="sres-login-intro-p">{cfg.pitch}</p>
+
+            {/* 3 Role-Tailored Features */}
+            <ul className="sres-login-features">
+              {cfg.features.map((feat, idx) => {
+                const FeatIcon = feat.icon;
+                return (
+                  <li key={idx} className="sres-login-feature-item">
+                    <div className="sres-login-feature-icon">
+                      <FeatIcon size={20} strokeWidth={2.2} />
+                    </div>
+                    <div>
+                      <div className="sres-login-feature-title">{feat.title}</div>
+                      <div className="sres-login-feature-desc">{feat.desc}</div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
 
-          <ul className="portal-feature-list">
-            {cfg.features.map(({ icon: FIcon, text }) => (
-              <li key={text}>
-                <span className="portal-feature-icon"><FIcon size={16} /></span>
-                <span>{text}</span>
-              </li>
-            ))}
-          </ul>
-
-          <div className="portal-brand-footer">
-            DepEd Order No. 8, s. 2015 compliant attendance records • RA 10173 Data Privacy Act
           </div>
-        </div>
       </aside>
 
-      {/* Form panel */}
-      <main className="portal-form-panel">
-        <div className="portal-form-card">
-
-
-          <div className="portal-form-header">
-            <div className="portal-form-icon"><Icon size={26} /></div>
-            <h1>{cfg.title}</h1>
-            <p>{cfg.subtitle}</p>
+      {/* ========================================================
+          RIGHT PANEL: Role-Themed Login Card (Zero Switcher)
+         ======================================================== */}
+      <main className="sres-login-form-side">
+        <div className="sres-login-card">
+          {/* Card Top Logo Tile */}
+          <div className="sres-login-card-brand">
+            <div className="sres-login-card-logo-tile">
+              <QrCode size={20} strokeWidth={2.4} />
+            </div>
+            <div>
+              <div className="sres-login-card-app-name">QR Attendance System</div>
+              <div className="sres-login-card-school-name">Sta. Rosa Elementary School</div>
+            </div>
           </div>
 
+          {/* Prominent Eyebrow Role Badge */}
+          <div className="sres-login-role-badge">
+            <BadgeIcon size={15} strokeWidth={2.4} />
+            <span>{cfg.badge}</span>
+          </div>
+
+          {/* Title & Subtitle */}
+          <h2 className="sres-login-card-title">{cfg.title}</h2>
+          <p className="sres-login-card-subtitle">{cfg.subtitle}</p>
+
+          {/* Session Expired Alert */}
           {isExpired && (
-            <div className="alert alert-warning portal-alert">
-              <AlertCircle size={15} />
+            <div className="sres-login-alert alert-warning" role="status">
+              <AlertCircle size={18} style={{ flexShrink: 0 }} />
               <span>Your session has expired. Please sign in again.</span>
             </div>
           )}
 
+          {/* Validation / Authentication Error Alert */}
           {error && (
-            <div className="alert alert-error portal-alert" role="alert">
-              <AlertCircle size={15} style={{ flexShrink: 0 }} />
+            <div className="sres-login-alert" role="alert">
+              <AlertCircle size={18} style={{ flexShrink: 0 }} />
               <span>{error}</span>
             </div>
           )}
 
+          {/* Login Form */}
           <form onSubmit={handleSubmit} noValidate>
-            <div className="form-group portal-field">
-              <label className="form-label" htmlFor={`${role}-username`}>{cfg.usernameLabel}</label>
-              <div className="portal-input-wrap">
-                <User size={16} className="portal-input-icon" />
-                <input
-                  id={`${role}-username`}
-                  type="text"
-                  className="form-input"
-                  placeholder={cfg.usernamePlaceholder}
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  autoComplete="username"
-                  required
-                />
-              </div>
-            </div>
+            <Input
+              id={`sres-${roleKey}-username`}
+              label={cfg.usernameLabel}
+              type="text"
+              icon={User}
+              placeholder={cfg.usernamePlaceholder}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              required
+            />
 
-            <div className="form-group portal-field">
-              <label className="form-label" htmlFor={`${role}-password`}>Password</label>
-              <div className="portal-input-wrap">
-                <Lock size={16} className="portal-input-icon" />
-                <input
-                  id={`${role}-password`}
-                  type={showPassword ? 'text' : 'password'}
-                  className="form-input"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                  required
-                />
+            <Input
+              id={`sres-${roleKey}-password`}
+              label="Password"
+              type={showPassword ? 'text' : 'password'}
+              icon={Lock}
+              placeholder="Enter your password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+              rightElement={
                 <button
                   type="button"
-                  className="portal-reveal-btn"
-                  onClick={() => setShowPassword((v) => !v)}
+                  className="sres-login-reveal-btn"
+                  onClick={() => setShowPassword((prev) => !prev)}
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
-              </div>
+              }
+            />
+
+            {/* Remember Me & Forgot Password Row */}
+            <div className="sres-login-options-row">
+              <label className="sres-login-remember">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                />
+                <span>Remember me</span>
+              </label>
+
+              <button
+                type="button"
+                className="sres-login-forgot-link"
+                onClick={() => setShowForgotModal(true)}
+              >
+                Forgot password?
+              </button>
             </div>
 
-            <button id={`${role}-signin-btn`} type="submit" className="portal-submit" disabled={loading}>
+            {/* Primary Sign In Button */}
+            <button
+              id={`sres-${roleKey}-signin-btn`}
+              type="submit"
+              className="sres-login-submit-btn"
+              disabled={loading}
+            >
               {loading ? (
-                <><Loader2 size={18} className="animate-spin" /><span>Signing in...</span></>
+                <>
+                  <Loader2 size={18} className="animate-spin" />
+                  <span>Signing in...</span>
+                </>
               ) : (
-                <><span>{cfg.btnText}</span><ArrowRight size={16} /></>
+                <>
+                  <ArrowRight size={18} strokeWidth={2.4} />
+                  <span>{cfg.btnText}</span>
+                </>
               )}
             </button>
 
-            {role === 'teacher' && (
+            {/* Secondary Action (Face Scanner Modal for Faculty) */}
+            {cfg.secondaryBtn && (
               <>
-                <div className="portal-divider"><span>Or use biometric sign-in</span></div>
+                <div className="sres-login-divider">
+                  <span>OR</span>
+                </div>
+
                 <button
-                  id="teacher-face-signin-btn"
+                  id={`sres-${roleKey}-secondary-btn`}
                   type="button"
-                  className="portal-face-btn"
-                  onClick={() => { setError(''); setShowFaceModal(true); }}
+                  className="sres-login-qr-btn"
+                  onClick={() => {
+                    setError('');
+                    setShowFaceModal(true);
+                  }}
                 >
-                  <Scan size={18} />
-                  <span>Scan Face to Sign In</span>
+                  <Scan size={18} strokeWidth={2.4} />
+                  <span>{cfg.secondaryBtn.text}</span>
                 </button>
               </>
             )}
           </form>
 
-          <div className={`portal-notice ${role === 'admin' ? 'portal-notice-warn' : ''}`}>
-            {role === 'admin' ? <ShieldAlert size={14} /> : <Lock size={14} />}
+          {/* Footer Notice */}
+          <div className="sres-login-footer-lock">
+            <Lock size={13} style={{ flexShrink: 0 }} />
             <span>{cfg.notice}</span>
           </div>
-
-
         </div>
       </main>
 
-      {showFaceModal && role === 'teacher' && (
+      {/* ========================================================
+          MODALS: Biometric Face Scanner & Assistance Dialogs
+         ======================================================== */}
+      {showFaceModal && roleKey === 'teacher' && (
         <TeacherFaceScannerModal
           isOpen={showFaceModal}
           onClose={() => setShowFaceModal(false)}
@@ -276,9 +461,61 @@ export default function LoginPortal({ initialRole = 'teacher' }) {
           onSuccess={(data) => {
             setShowFaceModal(false);
             login(data.token, data.user);
-            navigate('/dashboard');
+            navigate(redirectFor(data.user));
           }}
         />
+      )}
+
+      {/* Forgot Password Information Modal */}
+      {showForgotModal && (
+        <div
+          className="sres-login-info-modal-backdrop"
+          onClick={() => setShowForgotModal(false)}
+        >
+          <div
+            className="sres-login-info-modal"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="forgot-modal-title"
+          >
+            <div className="sres-login-info-modal-header">
+              <div className="sres-login-info-modal-icon">
+                <Info size={22} />
+              </div>
+              <h3 id="forgot-modal-title">Password Reset Assistance</h3>
+            </div>
+            <p>
+              {roleKey === 'learner' ? (
+                <>
+                  Learner accounts are issued and managed by your class adviser.
+                  Please ask your <strong>Class Adviser</strong> to check or reset your password.
+                </>
+              ) : roleKey === 'admin' ? (
+                <>
+                  Administrative access resets must be performed via the server console or by the
+                  designated <strong>School Head / Lead ICT Coordinator</strong>.
+                </>
+              ) : (
+                <>
+                  In accordance with DepEd security and data privacy policies,
+                  teacher password resets are managed locally.
+                  Please contact your <strong>School Head</strong> or{' '}
+                  <strong>ICT Coordinator</strong> to have your credentials securely reset.
+                </>
+              )}
+            </p>
+            <div className="sres-login-info-modal-actions">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setShowForgotModal(false)}
+              >
+                Understood
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

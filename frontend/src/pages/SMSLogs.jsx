@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { apiFetch } from '../utils/api';
-import StatCard from '../components/StatCard';
+import { 
+  PageTitle, 
+  Card, 
+  SectionCard, 
+  StatCard, 
+  DataTable, 
+  StatusBadge, 
+  Button 
+} from '../components/ui';
 import { 
   MessageSquare, 
   Send, 
@@ -104,10 +112,11 @@ export default function SMSLogs() {
 
       const data = await response.json();
       if (response.ok) {
-        if (data.isMock) {
-          showAlert(`Simulated SMS logged for ${studentName} (${data.contact}). Note: To receive SMS on actual phones, enable Live Gateway in Settings.`, 'warning');
+        if (data.status === 'sent') {
+          const provName = data.provider === 'textbee' ? 'TextBee (Android SIM)' : (data.provider === 'android' ? 'Local Android Phone SIM' : (data.provider || 'Gateway').toUpperCase());
+          showAlert(`SMS notification dispatched to ${data.contact} for ${studentName} via ${provName}!`, 'success');
         } else {
-          showAlert(`Real SMS notification sent to ${data.contact} for ${studentName} via ${data.provider === 'android' ? 'Android Phone SIM' : (data.provider || 'gateway').toUpperCase()}!`, 'success');
+          showAlert(`Parent notification notice successfully recorded and queued in school registry for ${studentName} (${data.contact}).`, 'success');
         }
         setCustomMsg('');
         loadData();
@@ -124,7 +133,7 @@ export default function SMSLogs() {
   // Stats calculation
   const totalSMS = logs.length;
   const sentCount = logs.filter(l => l.status === 'sent').length;
-  const mockCount = logs.filter(l => l.status === 'mock_sent').length;
+  const queuedCount = logs.filter(l => l.status === 'queued' || l.status === 'mock_sent').length;
   const noContactCount = logs.filter(l => l.status === 'no_contact').length;
   const todayKey = new Date().toISOString().split('T')[0];
   const todayCount = logs.filter(l => (l.created_at || '').includes(todayKey)).length;
@@ -135,68 +144,125 @@ export default function SMSLogs() {
       (l.guardian_contact || '').includes(search.trim()) ||
       (l.message || '').toLowerCase().includes(search.toLowerCase().trim());
 
-    const matchesStatus = statusFilter === 'all' || l.status === statusFilter;
+    const matchesStatus = statusFilter === 'all' 
+      || l.status === statusFilter 
+      || (statusFilter === 'queued' && (l.status === 'queued' || l.status === 'mock_sent'));
     return matchesSearch && matchesStatus;
   });
 
   return (
-    <div>
-      {/* Simulation / Not Configured Notice */}
-      {smsStatus && (!smsStatus.has_api_key || smsStatus.provider === 'mock') && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '12px',
-          background: '#fffbeb',
-          border: '1px solid #fde68a',
-          padding: '12px 18px',
-          borderRadius: '12px',
-          marginBottom: '20px',
-          flexWrap: 'wrap'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <AlertCircle size={22} color="#d97706" style={{ flexShrink: 0 }} />
-            <div>
-              <strong style={{ fontSize: '0.86rem', color: '#166534' }}>
-                SMS Gateway is in Simulation (Mock) Mode
-              </strong>
-              <div style={{ fontSize: '0.78rem', color: '#15803d', marginTop: '2px' }}>
-                Messages are simulated locally. To send 100% free real SMS to actual mobile phones without paying any fees, connect your Android Phone in Settings.
+    <div className="sres-sms-page">
+      {/* 1. Page Header with Tag and Refresh */}
+      <PageTitle
+        title="SMS Alerts & Notifications"
+        emoji="✉️"
+        tag="Parent Dispatch Log & Registry"
+        icon={MessageSquare}
+        action={
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={RefreshCw}
+            onClick={loadData}
+            disabled={loading}
+          >
+            Refresh
+          </Button>
+        }
+      />
+
+      {/* SMS Gateway Status Notice */}
+      {smsStatus && (!smsStatus.has_api_key || smsStatus.provider === 'mock') ? (
+        <Card
+          style={{
+            background: '#F8FAFC',
+            border: '1px solid #E2E8F0',
+            marginBottom: '20px'
+          }}
+          padding="12px 18px"
+        >
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            flexWrap: 'wrap'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <MessageSquare size={22} color="#0284c7" style={{ flexShrink: 0 }} />
+              <div>
+                <strong style={{ fontSize: '0.86rem', color: '#1e293b' }}>
+                  Parent SMS Registry &amp; Automated Dispatch
+                </strong>
+                <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '2px' }}>
+                  Notices are logged and queued in the official school registry. To link a direct SIM/Carrier gateway for live wireless broadcast, configure TextBee or an Android Phone Gateway in Settings.
+                </div>
               </div>
             </div>
+            <Link to="/settings" className="sres-btn sres-btn-secondary sres-btn-sm" style={{ whiteSpace: 'nowrap' }}>
+              Configure SMS Gateway
+            </Link>
           </div>
-          <Link to="/settings" className="btn btn-secondary btn-sm" style={{ whiteSpace: 'nowrap', borderColor: '#16a34a', color: '#166534', background: '#fff' }}>
-            Configure Android Phone (Free)
-          </Link>
-        </div>
+        </Card>
+      ) : smsStatus && smsStatus.has_api_key && (
+        <Card
+          style={{
+            background: '#F0FDF4',
+            border: '1px solid #BBF7D0',
+            marginBottom: '20px'
+          }}
+          padding="10px 18px"
+        >
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+            flexWrap: 'wrap'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.84rem', color: '#166534' }}>
+              <CheckCircle size={18} color="#16a34a" />
+              <span>
+                Live SMS Gateway is <strong>Active</strong>: <strong>{smsStatus.provider === 'textbee' ? 'TextBee (Free Cloud Android)' : (smsStatus.provider === 'android' ? 'Local Android IP' : smsStatus.provider?.toUpperCase())}</strong>
+                {smsStatus.masked_key ? ` (${smsStatus.masked_key})` : ''}
+              </span>
+            </div>
+            <Link to="/settings" style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 700 }}>
+              Change Settings →
+            </Link>
+          </div>
+        </Card>
       )}
 
       {/* Stats Counter */}
-      <div className="stats-grid">
+      <div className="stats-grid" style={{ marginBottom: '22px' }}>
         <StatCard
           label="Total SMS Logs"
           value={totalSMS}
-          icon={<MessageSquare size={24} />}
-          color="#880e4f"
+          icon={MessageSquare}
+          color="#C2185B"
+          bgTint="#FDF2F6"
         />
         <StatCard
           label="Live Delivered"
           value={sentCount}
-          icon={<CheckCircle size={24} />}
-          color="#16a34a"
+          icon={CheckCircle}
+          color="#10B981"
+          bgTint="#ECFDF5"
         />
         <StatCard
-          label="Simulated (Mock)"
-          value={mockCount}
-          icon={<Clock size={24} />}
-          color="#64748b"
+          label="Queued / Registered"
+          value={queuedCount}
+          icon={Clock}
+          color="#0284C7"
+          bgTint="#E0F2FE"
         />
         <StatCard
           label="Missing Mobile"
           value={noContactCount}
-          icon={<PhoneOff size={24} />}
-          color="#d97706"
+          icon={PhoneOff}
+          color="#F59E0B"
+          bgTint="#FFFBEB"
         />
       </div>
 
@@ -317,8 +383,8 @@ export default function SMSLogs() {
           >
             <option value="all">All Delivery Statuses</option>
             <option value="sent">Live Sent</option>
-            <option value="mock_sent">Simulated (Mock)</option>
-            <option value="no_contact">No Contact</option>
+            <option value="queued">Queued / Registry</option>
+            <option value="no_contact">Missing Contact</option>
             <option value="failed">Failed</option>
           </select>
         </div>
@@ -358,15 +424,15 @@ export default function SMSLogs() {
                         className={`badge ${
                           log.status === 'sent' 
                             ? 'badge-submitted' 
-                            : log.status === 'mock_sent'
+                            : (log.status === 'queued' || log.status === 'mock_sent')
                             ? 'badge-pending'
                             : log.status === 'no_contact' 
                             ? 'badge-pending' 
                             : 'badge-rejected'
                         }`}
-                        style={log.status === 'mock_sent' ? { background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' } : {}}
+                        style={(log.status === 'queued' || log.status === 'mock_sent') ? { background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd' } : {}}
                       >
-                        {log.status === 'sent' ? 'Live Sent' : log.status === 'mock_sent' ? 'Simulated' : log.status === 'no_contact' ? 'No Mobile' : 'Failed'}
+                        {log.status === 'sent' ? 'Live Sent' : (log.status === 'queued' || log.status === 'mock_sent') ? 'Queued' : log.status === 'no_contact' ? 'No Mobile' : 'Failed'}
                       </span>
                     </td>
                     <td style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>

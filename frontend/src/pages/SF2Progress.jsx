@@ -7,6 +7,14 @@ import {
   AlertCircle, 
   RefreshCw 
 } from 'lucide-react';
+import { 
+  PageTitle, 
+  Card, 
+  SectionCard, 
+  DataTable, 
+  StatusBadge, 
+  Button 
+} from '../components/ui';
 
 const MONTHS = [
   { name: 'June 2026', key: '2026-06' },
@@ -128,24 +136,19 @@ export default function SF2Progress() {
     : teachers.filter(t => String(t.id) === selectedTeacher);
 
   return (
-    <div>
-      <div className="card">
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">
-              <ListTodo size={22} />
-              <span>SF2 Submission Progress — S.Y. 2026–2027</span>
-            </h2>
-            <p className="card-subtitle">
-              Track and update SF2 submission timeline per teacher
-            </p>
-          </div>
-
+    <div className="sres-sf2-progress-page">
+      {/* 1. Page Header */}
+      <PageTitle
+        title="SF2 Submission Progress"
+        emoji="📊"
+        tag="S.Y. 2026–2027 • Track and update SF2 submission timeline per teacher"
+        icon={ListTodo}
+        action={
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <label style={{ fontSize: '0.8rem', fontWeight: 600 }}>Teacher:</label>
+            <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-heading)' }}>Teacher:</label>
             <select
               className="form-select"
-              style={{ width: 'auto', padding: '6px 12px', fontSize: '0.82rem' }}
+              style={{ width: 'auto', padding: '6px 12px', fontSize: '0.82rem', borderRadius: '10px', borderColor: 'var(--border-pink)' }}
               value={selectedTeacher}
               onChange={(e) => setSelectedTeacher(e.target.value)}
             >
@@ -154,11 +157,12 @@ export default function SF2Progress() {
                 <option key={t.id} value={t.id}>{t.full_name || t.username}</option>
               ))}
             </select>
-            <button className="btn btn-secondary btn-sm" onClick={loadData}>
-              <RefreshCw size={14} />
-            </button>
+            <Button variant="secondary" size="sm" icon={RefreshCw} onClick={loadData} />
           </div>
-        </div>
+        }
+      />
+
+      <Card padding="20px">
 
         {/* Legend Chips */}
         <div style={{
@@ -268,7 +272,7 @@ export default function SF2Progress() {
             <span>{saving ? 'Saving...' : 'Save Progress'}</span>
           </button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

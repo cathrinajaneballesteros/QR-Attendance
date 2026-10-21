@@ -8,6 +8,13 @@ import {
   AlertCircle,
   Printer
 } from 'lucide-react';
+import { showAlert } from '../utils/dialog';
+import { 
+  PageTitle, 
+  Card, 
+  SectionCard, 
+  Button 
+} from '../components/ui';
 
 const MONTH_NAMES = [
   '', 'January', 'February', 'March', 'April', 'May', 'June',
@@ -72,7 +79,11 @@ export default function SF2Report() {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      alert('Failed to download Excel file. Ensure the backend server is running.');
+      await showAlert({
+        title: 'Download Failed',
+        text: 'Failed to download Excel file. Ensure the backend server is running.',
+        icon: 'error'
+      });
     } finally {
       setDownloading(false);
     }
@@ -91,62 +102,71 @@ export default function SF2Report() {
   };
 
   return (
-    <div className="sf2-page-container">
-      {/* Top Toolbar Card */}
-      <div className="card" style={{ marginBottom: '16px' }}>
-        <div className="card-header" style={{ flexWrap: 'wrap', gap: '12px' }}>
-          <div>
-            <h2 className="card-title">
-              <FileSpreadsheet size={22} style={{ color: '#15803d' }} />
-              <span>School Form 2 (SF2) Daily Attendance Report</span>
-            </h2>
-            <p className="card-subtitle">
-              Official DepEd Learner Attendance and Absenteeism Profile
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+    <div className="sf2-page-container sres-sf2-page">
+      {/* 1. Page Header with Actions */}
+      <PageTitle
+        title="School Form 2 (SF2)"
+        emoji="📋"
+        tag={`Official DepEd Learner Attendance • Month: ${selectedMonth}`}
+        icon={FileSpreadsheet}
+        action={
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Calendar size={16} style={{ color: 'var(--primary)' }} />
               <input
                 type="month"
                 className="form-input"
-                style={{ padding: '7px 12px', fontSize: '0.85rem', width: 'auto' }}
+                style={{ 
+                  padding: '6px 12px', 
+                  fontSize: '0.82rem', 
+                  width: 'auto',
+                  borderRadius: '10px',
+                  borderColor: 'var(--border-pink)'
+                }}
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
               />
             </div>
 
-            <button className="btn btn-secondary btn-sm" onClick={loadReport} disabled={loading}>
-              {loading ? <Loader2 size={14} className="animate-spin" /> : <span>Refresh</span>}
-            </button>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={loading ? Loader2 : null}
+              onClick={loadReport}
+              disabled={loading}
+            >
+              {loading ? 'Refreshing...' : 'Refresh'}
+            </Button>
 
-            <button 
-              className="btn btn-primary btn-sm" 
-              onClick={handleDownloadExcel} 
+            <Button
+              variant="primary"
+              size="sm"
+              icon={downloading ? Loader2 : Download}
+              onClick={handleDownloadExcel}
               disabled={downloading}
-              style={{ 
-                background: 'linear-gradient(135deg, #15803d, #166534)',
-                boxShadow: '0 2px 8px rgba(21, 128, 61, 0.3)'
+              style={{
+                background: 'linear-gradient(135deg, #15803d, #166534)'
               }}
             >
-              {downloading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-              <span>{downloading ? 'Generating Excel...' : 'Download .xlsx'}</span>
-            </button>
+              {downloading ? 'Generating...' : 'Download .xlsx'}
+            </Button>
 
-            <button 
-              className="btn btn-secondary btn-sm"
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Printer}
               onClick={() => window.print()}
               title="Print SF2 Report"
             >
-              <Printer size={14} />
-              <span>Print</span>
-            </button>
+              Print
+            </Button>
           </div>
-        </div>
+        }
+      />
 
+      {/* DepEd SF2 Header & Legend Card */}
+      <Card style={{ marginBottom: '16px' }} padding="16px 20px">
         {error && (
-          <div className="alert alert-error" style={{ marginTop: '12px' }}>
+          <div className="alert alert-error" style={{ marginBottom: '12px' }}>
             <AlertCircle size={16} />
             <span>{error}</span>
           </div>
@@ -223,27 +243,28 @@ export default function SF2Report() {
             <span>Unscheduled / No Class</span>
           </span>
         </div>
-      </div>
+      </Card>
 
       {/* Main DepEd SF2 Sheet Preview Container */}
       <div className="card" style={{ padding: '20px', background: '#ffffff', border: '1px solid #cbd5e1' }}>
         
         {/* DepEd SF2 Official Header Table */}
-        <div style={{ marginBottom: '16px', border: '2px solid #000000', padding: '12px 16px', background: '#ffffff' }}>
-          <div style={{ textAlign: 'center', marginBottom: '8px' }}>
+        <div className="sf2-header-box-container">
+          <div style={{ textAlign: 'center', padding: '10px 16px 8px' }}>
             <h1 style={{ 
               fontSize: '1.05rem', 
               fontWeight: 800, 
               color: '#000000', 
               textTransform: 'uppercase', 
               margin: 0,
-              letterSpacing: '0.02em'
+              letterSpacing: '0.02em',
+              fontFamily: 'Arial, sans-serif'
             }}>
               School Form 2 (SF2) Daily Attendance Report of Learners
             </h1>
             <p style={{ 
               fontSize: '0.72rem', 
-              color: '#334155', 
+              color: '#1e293b', 
               fontStyle: 'italic', 
               margin: '2px 0 0' 
             }}>
@@ -251,22 +272,48 @@ export default function SF2Report() {
             </p>
           </div>
 
-          {/* Header Metadata Grid */}
+          {/* Official Boxed DepEd Header Grid (Matching DepEd SF2 template) */}
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-            gap: '6px 16px',
-            fontSize: '0.8rem',
-            borderTop: '1px solid #000000',
-            paddingTop: '8px',
-            color: '#000000'
+            borderTop: '1.5px solid #000000',
+            fontSize: '0.75rem',
+            color: '#000000',
+            background: '#ffffff'
           }}>
-            <div><strong>School ID:</strong> <span style={{ textDecoration: 'underline' }}>{schoolInfo.schoolId}</span></div>
-            <div><strong>School Year:</strong> <span style={{ textDecoration: 'underline' }}>{schoolInfo.schoolYear}</span></div>
-            <div><strong>Report for the Month of:</strong> <span style={{ textDecoration: 'underline', fontWeight: 800 }}>{monthTitle}</span></div>
-            <div><strong>Name of School:</strong> <span style={{ textDecoration: 'underline' }}>{schoolInfo.schoolName}</span></div>
-            <div><strong>Grade Level:</strong> <span style={{ textDecoration: 'underline' }}>{schoolInfo.gradeLevel}</span></div>
-            <div><strong>Section:</strong> <span style={{ textDecoration: 'underline' }}>{schoolInfo.section}</span></div>
+            {/* Row 1: School ID, School Year, Report for the Month of */}
+            <div className="sf2-header-grid-row1">
+              <div className="sf2-header-label">School ID</div>
+              <div className="sf2-header-val sf2-header-val-mid">
+                {schoolInfo.schoolId}
+              </div>
+
+              <div className="sf2-header-label">School Year</div>
+              <div className="sf2-header-val sf2-header-val-mid">
+                {schoolInfo.schoolYear}
+              </div>
+
+              <div className="sf2-header-label">Report for the Month of</div>
+              <div className="sf2-header-val" style={{ textTransform: 'uppercase', fontWeight: 800 }}>
+                {reportData?.monthName || monthTitle}
+              </div>
+            </div>
+
+            {/* Row 2: Name of School, Grade Level, Section */}
+            <div className="sf2-header-grid-row2">
+              <div className="sf2-header-label">Name of School</div>
+              <div className="sf2-header-val sf2-header-val-mid">
+                {schoolInfo.schoolName}
+              </div>
+
+              <div className="sf2-header-label">Grade Level</div>
+              <div className="sf2-header-val sf2-header-val-mid">
+                {schoolInfo.gradeLevel}
+              </div>
+
+              <div className="sf2-header-label">Section</div>
+              <div className="sf2-header-val" style={{ textTransform: 'uppercase' }}>
+                {schoolInfo.section}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -532,12 +579,7 @@ export default function SF2Report() {
 
         {/* DepEd SF2 Bottom Summary & Guidelines Section (Matching Excel Format) */}
         {reportData && (
-          <div className="responsive-two-col" style={{ 
-            marginTop: '20px', 
-            gap: '16px',
-            color: '#000000',
-            fontSize: '0.74rem'
-          }}>
+          <div className="sf2-bottom-grid" style={{ marginTop: '20px' }}>
             
             {/* 1. GUIDELINES PANEL */}
             <div style={{ border: '1px solid #000000', padding: '12px', background: '#fafafa' }}>
@@ -587,41 +629,57 @@ export default function SF2Report() {
             </div>
 
             {/* 3. OFFICIAL SUMMARY TABLE */}
-            <div style={{ border: '1px solid #000000', padding: '12px', background: '#ffffff' }}>
+            <div style={{ 
+              border: '1px solid #000000', 
+              padding: '10px 12px', 
+              background: '#ffffff',
+              boxSizing: 'border-box',
+              minWidth: 0,
+              overflow: 'hidden'
+            }}>
               <div style={{ 
                 display: 'flex', 
                 justifyContent: 'space-between', 
                 fontWeight: 800, 
                 borderBottom: '1px solid #000000', 
                 paddingBottom: '4px', 
-                marginBottom: '8px' 
+                marginBottom: '8px',
+                fontSize: '0.72rem'
               }}>
                 <span>Month: {reportData.monthName}</span>
                 <span>No. of Days of Classes: {reportData.classDaysCount}</span>
               </div>
 
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem' }}>
-                <thead>
-                  <tr style={{ background: '#f1f5f9', textAlign: 'center', fontWeight: 800 }}>
-                    <th style={{ border: '1px solid #000000', padding: '4px', textAlign: 'left' }}>Summary</th>
-                    <th style={{ border: '1px solid #000000', padding: '4px', width: '38px' }}>M</th>
-                    <th style={{ border: '1px solid #000000', padding: '4px', width: '38px' }}>F</th>
-                    <th style={{ border: '1px solid #000000', padding: '4px', width: '48px' }}>TOTAL</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {renderSummaryRow('* Enrolment as of (1st Friday of June)', reportData.summary?.enrolment)}
-                  {renderSummaryRow('Late enrolment during month', reportData.summary?.lateEnrolment)}
-                  {renderSummaryRow('Registered Learners as of end of month', reportData.summary?.registeredEnd)}
-                  {renderSummaryRow('Percentage of Enrolment as of end of month', reportData.summary?.pctEnrolment)}
-                  {renderSummaryRow('Average Daily Attendance', reportData.summary?.ada)}
-                  {renderSummaryRow('Percentage of Attendance for the month', reportData.summary?.pctAttendance)}
-                  {renderSummaryRow('Number of students absent for 5 consecutive days', reportData.summary?.consecutive5)}
-                  {renderSummaryRow('Dropped out', reportData.summary?.droppedOut)}
-                  {renderSummaryRow('Transferred out', reportData.summary?.transferredOut)}
-                  {renderSummaryRow('Transferred in', reportData.summary?.transferredIn)}
-                </tbody>
-              </table>
+              <div style={{ width: '100%', overflowX: 'auto' }}>
+                <table className="sf2-summary-table">
+                  <colgroup>
+                    <col style={{ width: 'auto' }} />
+                    <col style={{ width: '50px' }} />
+                    <col style={{ width: '50px' }} />
+                    <col style={{ width: '56px' }} />
+                  </colgroup>
+                  <thead>
+                    <tr style={{ background: '#f1f5f9', textAlign: 'center', fontWeight: 800 }}>
+                      <th style={{ border: '1px solid #000000', padding: '4px 6px', textAlign: 'left' }}>Summary</th>
+                      <th style={{ border: '1px solid #000000', padding: '4px 2px', width: '50px' }}>M</th>
+                      <th style={{ border: '1px solid #000000', padding: '4px 2px', width: '50px' }}>F</th>
+                      <th style={{ border: '1px solid #000000', padding: '4px 2px', width: '56px' }}>TOTAL</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {renderSummaryRow('* Enrolment as of (1st Friday of June)', reportData.summary?.enrolment)}
+                    {renderSummaryRow('Late enrolment during month', reportData.summary?.lateEnrolment)}
+                    {renderSummaryRow('Registered Learners as of end of month', reportData.summary?.registeredEnd)}
+                    {renderSummaryRow('Percentage of Enrolment as of end of month', reportData.summary?.pctEnrolment)}
+                    {renderSummaryRow('Average Daily Attendance', reportData.summary?.ada)}
+                    {renderSummaryRow('Percentage of Attendance for the month', reportData.summary?.pctAttendance)}
+                    {renderSummaryRow('Number of students absent for 5 consecutive days', reportData.summary?.consecutive5)}
+                    {renderSummaryRow('Dropped out', reportData.summary?.droppedOut)}
+                    {renderSummaryRow('Transferred out', reportData.summary?.transferredOut)}
+                    {renderSummaryRow('Transferred in', reportData.summary?.transferredIn)}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
           </div>
@@ -799,18 +857,47 @@ function renderAttendanceCell(dayAtt, sd, studentName) {
 }
 
 function renderSummaryRow(label, values) {
+  const isPct = String(values?.m || '').includes('%');
   return (
     <tr>
-      <td style={{ border: '1px solid #000000', padding: '3px 6px', fontSize: '0.7rem' }}>
+      <td style={{ 
+        border: '1px solid #000000', 
+        padding: '3px 6px', 
+        fontSize: '0.68rem',
+        wordBreak: 'break-word',
+        whiteSpace: 'normal',
+        lineHeight: 1.25
+      }}>
         {label}
       </td>
-      <td style={{ border: '1px solid #000000', padding: '3px 4px', textAlign: 'center', fontWeight: 600 }}>
+      <td style={{ 
+        border: '1px solid #000000', 
+        padding: '3px 1px', 
+        textAlign: 'center', 
+        fontWeight: 600,
+        fontSize: isPct ? '0.64rem' : '0.70rem',
+        whiteSpace: 'nowrap'
+      }}>
         {values?.m ?? 0}
       </td>
-      <td style={{ border: '1px solid #000000', padding: '3px 4px', textAlign: 'center', fontWeight: 600 }}>
+      <td style={{ 
+        border: '1px solid #000000', 
+        padding: '3px 1px', 
+        textAlign: 'center', 
+        fontWeight: 600,
+        fontSize: isPct ? '0.64rem' : '0.70rem',
+        whiteSpace: 'nowrap'
+      }}>
         {values?.f ?? 0}
       </td>
-      <td style={{ border: '1px solid #000000', padding: '3px 4px', textAlign: 'center', fontWeight: 800 }}>
+      <td style={{ 
+        border: '1px solid #000000', 
+        padding: '3px 1px', 
+        textAlign: 'center', 
+        fontWeight: 800,
+        fontSize: isPct ? '0.64rem' : '0.70rem',
+        whiteSpace: 'nowrap'
+      }}>
         {values?.total ?? 0}
       </td>
     </tr>

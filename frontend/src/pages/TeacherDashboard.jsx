@@ -1,25 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { apiFetch } from '../utils/api';
-import LiveClock from '../components/LiveClock';
-import StatCard from '../components/StatCard';
+import { apiFetch, downloadWithAuth } from '../utils/api';
 import { 
   Users, 
-  UserCheck, 
-  UserX, 
-  TrendingUp, 
-  QrCode, 
-  FileSpreadsheet, 
-  MessageSquare, 
+  Check, 
+  X, 
+  Percent, 
+  Scan, 
+  Calendar,
+  Zap, 
+  UserPlus, 
+  FileText, 
+  Mail, 
+  GraduationCap, 
+  Download,
   RefreshCw,
-  Clock,
-  History,
-  Building,
-  Laptop,
-  MapPin,
-  Download
+  FileSpreadsheet
 } from 'lucide-react';
+import {
+  PageTitle,
+  Card,
+  SectionCard,
+  FeatureCard,
+  StatCard,
+  StepGuide,
+  DataTable,
+  StatusBadge,
+  LivePill,
+  EmptyState,
+  ActionRow,
+  Button
+} from '../components/ui';
 
 export default function TeacherDashboard() {
   const { user } = useAuth();
@@ -28,7 +40,7 @@ export default function TeacherDashboard() {
     present_today: 0, 
     absent_today: 0, 
     attendance_rate: 0,
-    room: 'Room 101 - Grade 6 Great Geniuses',
+    room: 'Room 101',
     attendance_mode: 'onsite'
   });
   const [todayRecords, setTodayRecords] = useState([]);
@@ -64,244 +76,258 @@ export default function TeacherDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  return (
-    <div>
-      <LiveClock />
+  // Time-aware greeting
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 18) return 'Good afternoon';
+    return 'Good evening';
+  };
 
-      <div className="card" style={{ background: 'var(--surface-gradient)', border: '1px solid var(--primary-border)', marginBottom: '20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--primary)', margin: 0 }}>
-                Welcome back, {user?.full_name || user?.username || 'Teacher'}! 👋
-              </h2>
-              {/* Room badge (Requirement 8) */}
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                background: 'var(--primary-light)',
-                color: 'var(--primary)',
-                padding: '4px 10px',
-                borderRadius: '12px',
-                fontSize: '0.76rem',
-                fontWeight: 700
-              }}>
-                <Building size={13} />
-                <span>{stats.room || 'Room 101 - Grade 6 Great Geniuses'}</span>
-              </span>
-              {/* Mode badge (Requirement 2) */}
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                background: stats.attendance_mode === 'flipped' ? '#e0f2fe' : '#dcfce7',
-                color: stats.attendance_mode === 'flipped' ? '#0369a1' : '#15803d',
-                padding: '4px 10px',
-                borderRadius: '12px',
-                fontSize: '0.76rem',
-                fontWeight: 700
-              }}>
-                {stats.attendance_mode === 'flipped' ? <Laptop size={13} /> : <MapPin size={13} />}
-                <span>{stats.attendance_mode === 'flipped' ? 'Online Mode' : 'Onsite Mode'}</span>
-              </span>
-            </div>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-              Grade 6 - GREAT GENIUSES • Class Adviser: {user?.full_name || user?.username || 'Teacher'} • S.Y. 2026-2027
-            </p>
-          </div>
+  const displayName = user?.full_name || user?.username || 'Ms. Aragon';
+  const roomTag = stats.room ? `Grade 6 • ${stats.room.replace(/Room 101.*/, 'Room 101')}` : 'Grade 6 • Room 101';
+  const absentCount = stats.absent_today ?? (stats.total_students ? Math.max(0, stats.total_students - (stats.present_today || 0)) : 0);
+
+  return (
+    <div className="sres-dashboard-page">
+      {/* 1. Page Header with Greeting & Pill Tag */}
+      <PageTitle
+        title={`${getGreeting()}, ${displayName}`}
+        emoji="👋"
+        tag={roomTag}
+        icon={GraduationCap}
+        action={
           <button 
-            className="btn btn-secondary btn-sm" 
-            onClick={loadData} 
+            type="button"
+            className="sres-btn sres-btn-secondary sres-btn-sm"
+            onClick={loadData}
             disabled={loading}
+            title="Refresh Attendance Data"
           >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            <span>Refresh Data</span>
+            <RefreshCw size={13} strokeWidth={1.8} className={loading ? 'animate-spin' : ''} />
+            <span>Refresh</span>
           </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Fresh Account Onboarding: Prompt to import Excel when roster is empty */}
       {stats.total_students === 0 && !loading && (
-        <div style={{
-          background: 'linear-gradient(135deg, rgba(136, 14, 79, 0.05) 0%, rgba(194, 24, 91, 0.1) 100%)',
-          border: '1.5px dashed var(--primary)',
-          borderRadius: '16px',
-          padding: '22px 24px',
-          marginBottom: '22px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '16px'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', maxWidth: '680px' }}>
-            <div style={{
-              background: 'var(--primary)',
-              color: '#ffffff',
-              borderRadius: '12px',
-              padding: '12px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              boxShadow: '0 4px 10px rgba(136, 14, 79, 0.25)'
-            }}>
-              <FileSpreadsheet size={28} />
+        <Card 
+          style={{
+            background: 'linear-gradient(135deg, #FFF5F8 0%, #FFFFFF 100%)',
+            border: '1.5px dashed var(--border-pink)',
+            marginBottom: '20px'
+          }}
+          padding="18px 22px"
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px', maxWidth: '640px' }}>
+              <div style={{
+                width: 44,
+                height: 44,
+                borderRadius: 12,
+                background: 'var(--primary-gradient)',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                boxShadow: '0 4px 12px rgba(107, 15, 58, 0.2)'
+              }}>
+                <FileSpreadsheet size={22} strokeWidth={1.8} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '0.96rem', fontWeight: 800, color: 'var(--text-heading)', margin: '0 0 3px 0' }}>
+                  Setup Your Class Roster: Import from Excel
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.45 }}>
+                  Your account currently has no learners. Import your DepEd SF2 Excel file to register learners and generate QR codes automatically.
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--primary)', margin: '0 0 5px 0' }}>
-                Setup Your Class Roster: Import from Excel
-              </h3>
-              <p style={{ fontSize: '0.86rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>
-                Your teacher account currently has no student records. Import your DepEd SF2 Excel file (such as <code>add learner.xls</code> on sheet <code>MARCH</code>) to automatically register your student names and generate attendance QR codes.
-              </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <Link to="/teacher/students?import=true" className="sres-btn sres-btn-primary sres-btn-sm">
+                <FileSpreadsheet size={14} strokeWidth={1.8} />
+                <span>Import Excel Roster</span>
+              </Link>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <Link to="/students?import=true" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <FileSpreadsheet size={16} />
-              <span>Import Excel Roster</span>
-            </Link>
-            <Link to="/students" className="btn btn-secondary">
-              <span>View Learners</span>
-            </Link>
-          </div>
-        </div>
+        </Card>
       )}
 
-      {/* Stats Counter Grid */}
-      <div className="stats-grid">
-        <StatCard
-          label="Total Learners"
-          value={stats.total_students || 0}
-          icon={<Users size={24} />}
-          color="#880e4f"
+      {/* 2. Top Dashboard Grid: Feature Card (60%) + 2x2 Stat Cards (40%) */}
+      <div className="sres-grid-dashboard-top">
+        {/* Left: Scan Student QR Code Banner */}
+        <FeatureCard
+          title="Scan Student QR Code"
+          description="Record attendance in seconds."
+          buttonText="Open QR Scanner"
+          buttonIcon={Scan}
+          buttonTo="/teacher/attendance"
         />
-        <StatCard
-          label="Present Today"
-          value={stats.present_today || 0}
-          icon={<UserCheck size={24} />}
-          color="#16a34a"
-        />
-        <StatCard
-          label="Absent Today"
-          value={stats.absent_today || 0}
-          icon={<UserX size={24} />}
-          color="#dc2626"
-        />
-        <StatCard
-          label="Attendance Rate"
-          value={`${stats.attendance_rate || 0}%`}
-          icon={<TrendingUp size={24} />}
-          color="#0284c7"
-        />
-      </div>
 
-      {/* Quick Actions Bar */}
-      <div className="card" style={{ padding: '16px 20px', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--primary)', marginRight: '4px' }}>
-            Quick Actions:
-          </span>
-          <Link to="/attendance" className="btn btn-primary btn-sm">
-            <QrCode size={15} />
-            <span>Start QR Scanner</span>
-          </Link>
-          <Link to="/students?import=true" className="btn btn-secondary btn-sm" title="Import students from Excel (.xls / .xlsx)">
-            <FileSpreadsheet size={15} />
-            <span>Import Excel Roster</span>
-          </Link>
-          <Link to="/history" className="btn btn-secondary btn-sm">
-            <History size={15} />
-            <span>Historical Attendance</span>
-          </Link>
-          <Link to="/students" className="btn btn-secondary btn-sm">
-            <Users size={15} />
-            <span>Class Roster ({stats.total_students})</span>
-          </Link>
-          <Link to="/sf2-report" className="btn btn-secondary btn-sm">
-            <FileSpreadsheet size={15} />
-            <span>SF2 Report</span>
-          </Link>
-          <Link to="/sms-logs" className="btn btn-secondary btn-sm">
-            <MessageSquare size={15} />
-            <span>SMS Alerts</span>
-          </Link>
+        {/* Right: 2x2 Stat Grid */}
+        <div className="sres-grid-stats-2x2">
+          {/* Total Learners */}
+          <StatCard
+            label="Total Learners"
+            value={stats.total_students || 0}
+            icon={Users}
+            color="#C2185B"
+            bgTint="#FDF2F6"
+            to="/teacher/students"
+          />
+
+          {/* Present Today */}
+          <StatCard
+            label="Present Today"
+            value={stats.present_today || 0}
+            icon={Check}
+            color="#10B981"
+            bgTint="#ECFDF5"
+            to="/teacher/history"
+          />
+
+          {/* Absent Today */}
+          <StatCard
+            label="Absent Today"
+            value={absentCount}
+            icon={X}
+            color="#EF4444"
+            bgTint="#FEF2F2"
+            to="/teacher/sms-logs"
+          />
+
+          {/* Attendance Rate */}
+          <StatCard
+            label="Attendance Rate"
+            value={`${stats.attendance_rate || 0}%`}
+            icon={Percent}
+            color="#8B5CF6"
+            bgTint="#F5F3FF"
+            to="/teacher/sf2-report"
+          />
         </div>
       </div>
 
-      {/* Today's Attendance Table Feed */}
-      <div className="card">
-        <div className="card-header">
-          <div>
-            <h3 className="card-title">
-              <Clock size={20} />
-              <span>Today's Recorded Attendance</span>
-            </h3>
-            <p className="card-subtitle">Real-time attendance check-ins for today • {stats.room}</p>
-          </div>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <span className="badge badge-submitted">
-              {todayRecords.length} recorded
-            </span>
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => window.open(`/api/attendance/export?from=${new Date().toISOString().split('T')[0]}&to=${new Date().toISOString().split('T')[0]}`, '_blank')}
+      {/* 3. Middle: Quick Guide / Step Guide */}
+      <div style={{ marginTop: '20px' }}>
+        <StepGuide
+          title="Quick Guide"
+          description="Follow these 3 simple steps to record attendance."
+          steps={[
+            'Open scanner',
+            'Scan learner QR',
+            'Confirm attendance'
+          ]}
+        />
+      </div>
+
+      {/* 4. Bottom Grid: Today's Attendance (60%) + Quick Access (40%) */}
+      <div className="sres-grid-dashboard-bottom">
+        {/* Left: Today's Attendance Feed */}
+        <SectionCard
+          title="Today's Attendance"
+          subtitle="Live updates for your class"
+          icon={Calendar}
+          badge={<LivePill />}
+          action={
+            todayRecords.length > 0 && (
+              <button
+                type="button"
+                className="sres-btn sres-btn-secondary sres-btn-sm"
+                onClick={() => downloadWithAuth(
+                  `/api/attendance/export?from=${new Date().toISOString().split('T')[0]}&to=${new Date().toISOString().split('T')[0]}`, 
+                  `attendance_${new Date().toISOString().split('T')[0]}.csv`
+                )}
+                title="Export today's attendance to CSV"
+              >
+                <Download size={13} strokeWidth={1.8} />
+                <span>Export</span>
+              </button>
+            )
+          }
+        >
+          {todayRecords.length === 0 ? (
+            <EmptyState
+              title="No attendance records yet"
+              hint="Start by scanning a student QR code to record attendance for your class."
+              buttonText="Start by scanning a student QR code"
+              buttonIcon={Scan}
+              buttonTo="/attendance"
+            />
+          ) : (
+            <DataTable
+              columns={[
+                { label: 'Learner' },
+                { label: 'Time In' },
+                { label: 'Status' }
+              ]}
             >
-              <Download size={13} />
-              <span>Export CSV</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="table-responsive">
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: '60px' }}>No.</th>
-                <th>Learner Name</th>
-                <th style={{ width: '80px' }}>Sex</th>
-                <th style={{ width: '130px' }}>Time In</th>
-                <th style={{ width: '100px' }}>Status</th>
-                <th>Room</th>
-              </tr>
-            </thead>
-            <tbody>
-              {todayRecords.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
-                    No attendance records for today yet. Start scanning QR codes at the gate!
+              {todayRecords.map((r, i) => (
+                <tr key={r.id || i}>
+                  <td>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontWeight: 700, color: 'var(--text-heading)' }}>
+                        {r.full_name}
+                      </span>
+                      <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)' }}>
+                        {r.sex === 'M' ? 'Male' : 'Female'} • LRN: {r.lrn || '—'}
+                      </span>
+                    </div>
+                  </td>
+                  <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.84rem', color: 'var(--text-heading)' }}>
+                    {r.time_in || '—'}
+                  </td>
+                  <td>
+                    <StatusBadge
+                      variant={r.status === 'late' ? 'warning' : 'success'}
+                      label={r.status === 'late' ? 'Late' : 'Present'}
+                    />
                   </td>
                 </tr>
-              ) : (
-                todayRecords.map((r, i) => (
-                  <tr key={r.id || i}>
-                    <td>{i + 1}</td>
-                    <td style={{ fontWeight: 600 }}>{r.full_name}</td>
-                    <td>
-                      <span className={`badge ${r.sex === 'M' ? 'badge-not-started' : 'badge-pending'}`}>
-                        {r.sex === 'M' ? 'Male' : 'Female'}
-                      </span>
-                    </td>
-                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem' }}>
-                      {r.time_in}
-                    </td>
-                    <td>
-                      <span className={`badge ${r.status === 'late' ? 'badge-late' : 'badge-present'}`}>
-                        {r.status || 'Present'}
-                      </span>
-                    </td>
-                    <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                      {r.room || stats.room}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+              ))}
+            </DataTable>
+          )}
+        </SectionCard>
+
+        {/* Right: Quick Access */}
+        <SectionCard
+          title="Quick Access"
+          subtitle="Get to the most important tools"
+          icon={Zap}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <ActionRow
+              title="Import Class List"
+              description="Add or update your class roster from a file."
+              icon={UserPlus}
+              iconColor="#C2185B"
+              iconBg="#FDF2F6"
+              to="/teacher/students?import=true"
+            />
+
+            <ActionRow
+              title="View SF2 Report"
+              description="Generate and manage your SF2 reports."
+              icon={FileText}
+              iconColor="#6366F1"
+              iconBg="#EEF2FF"
+              to="/teacher/sf2-report"
+            />
+
+            <ActionRow
+              title="Send Absence Alerts"
+              description="Notify parents about student absences via SMS."
+              icon={Mail}
+              iconColor="#C2185B"
+              iconBg="#FDF2F6"
+              to="/teacher/sms-logs"
+            />
+          </div>
+        </SectionCard>
       </div>
     </div>
   );
 }
+

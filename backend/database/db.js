@@ -259,7 +259,11 @@ async function initSqliteDatabase() {
     absence_threshold: '5',
     late_after: '08:00',
     sms_enabled: '0',
-    student_face_verification: '1'
+    sms_provider: 'textbee',
+    textbee_api_key: '',
+    textbee_device_id: '',
+    student_face_verification: '1',
+    scanner_verification_mode: 'both'
   };
 
   for (const [key, value] of Object.entries(defaults)) {
@@ -641,7 +645,10 @@ async function initPgDatabase(connectionString) {
     ['attendance_deadline', '16:00'],
     ['absence_threshold', '5'],
     ['late_after', '08:00'],
-    ['sms_enabled', '0']
+    ['sms_enabled', '0'],
+    ['sms_provider', 'textbee'],
+    ['textbee_api_key', ''],
+    ['textbee_device_id', '']
   ];
 
   for (const [key, val] of defaults) {

@@ -20,7 +20,9 @@ const defaults = {
     absence_threshold: '5',
     late_after: '08:00',
     sms_enabled: '0',
-    sms_provider: 'philsms',
+    sms_provider: 'textbee',
+    textbee_api_key: '',
+    textbee_device_id: '',
     philsms_api_token: '',
     philsms_sender_id: 'PhilSMS',
     android_gateway_url: '',
@@ -30,7 +32,8 @@ const defaults = {
     twilio_account_sid: '',
     twilio_auth_token: '',
     twilio_phone_number: '',
-    student_face_verification: '1'
+    student_face_verification: '1',
+    scanner_verification_mode: 'both'
 };
 
 async function getSettings(db) {
@@ -64,14 +67,38 @@ router.put('/', auth, async function (req, res) {
 
         const db = req.app.get('db');
 
+        // Admin-only setting keys: teachers are restricted from modifying SMS gateway configuration
+        const adminOnlyKeys = [
+            'sms_provider',
+            'sms_enabled',
+            'textbee_api_key',
+            'textbee_device_id',
+            'philsms_api_token',
+            'philsms_sender_id',
+            'android_gateway_url',
+            'android_gateway_key',
+            'semaphore_api_key',
+            'sms_sender_name',
+            'twilio_account_sid',
+            'twilio_auth_token',
+            'twilio_phone_number'
+        ];
+
+        const payload = Object.assign({}, req.body);
+        if (req.user.role !== 'admin') {
+            for (const key of adminOnlyKeys) {
+                delete payload[key];
+            }
+        }
+
         for (const key of Object.keys(defaults)) {
-            if (req.body[key] !== undefined) {
+            if (payload[key] !== undefined) {
                 await db.prepare(
                     'INSERT INTO app_settings (setting_key, setting_value) ' +
                     'VALUES (?, ?) ' +
                     'ON CONFLICT(setting_key) DO UPDATE SET ' +
                     'setting_value = excluded.setting_value'
-                ).run(key, String(req.body[key]));
+                ).run(key, String(payload[key]));
             }
         }
 

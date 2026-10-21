@@ -114,7 +114,7 @@ export default function PrintQR() {
         boxShadow: 'var(--shadow-sm)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <Link to="/students" className="btn btn-secondary btn-sm">
+          <Link to="/teacher/students" className="btn btn-secondary btn-sm">
             <ArrowLeft size={15} />
             <span>Back to Students</span>
           </Link>

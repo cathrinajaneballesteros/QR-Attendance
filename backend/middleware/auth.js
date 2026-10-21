@@ -10,6 +10,8 @@ function auth(req, res, next) {
             token = authHeader.substring(7);
         } else if (authHeader) {
             token = authHeader;
+        } else if (req.query && req.query.token) {
+            token = req.query.token;
         }
         if (!token || token === 'null' || token === 'undefined') {
             return res.status(401).json({ error: 'No token provided' });

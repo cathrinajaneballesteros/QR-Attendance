@@ -1,7 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../utils/api';
-import LiveClock from '../components/LiveClock';
-import StatCard from '../components/StatCard';
+import { 
+  PageTitle, 
+  Card, 
+  SectionCard, 
+  StatCard, 
+  DataTable, 
+  StatusBadge, 
+  Button 
+} from '../components/ui';
 import { 
   Users, 
   UserPlus, 
@@ -24,6 +31,7 @@ import {
   ShieldCheck,
   Building
 } from 'lucide-react';
+import { showConfirm } from '../utils/dialog';
 
 export default function ManageStudentAccounts() {
   const [loading, setLoading] = useState(true);
@@ -113,7 +121,13 @@ export default function ManageStudentAccounts() {
       ? teachersSummary.find(t => t.teacher_id === teacherId)?.teacher_name || 'selected teacher'
       : (selectedTeacher === 'all' ? 'ALL unregistered students' : 'selected teacher roster');
 
-    if (!window.confirm(`Are you sure you want to create student accounts for ${targetLabel}? Default credentials will be:\nUsername: LastnameFirstname\nPassword: Password`)) {
+    const confirmed = await showConfirm({
+      title: 'Generate Student Portal Accounts?',
+      text: `Create student credentials for ${targetLabel}? Default credentials will be:\nUsername: LastnameFirstname\nPassword: Password`,
+      confirmButtonText: 'Generate Accounts',
+      icon: 'question'
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -143,7 +157,13 @@ export default function ManageStudentAccounts() {
   };
 
   const handleResetPassword = async (studentId, studentName) => {
-    if (!window.confirm(`Reset password for ${studentName} back to the default password ('Password')?`)) {
+    const confirmed = await showConfirm({
+      title: 'Reset Student Password?',
+      text: `Reset password for ${studentName} back to the default password ('Password')?`,
+      confirmButtonText: 'Reset Password',
+      icon: 'question'
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -191,57 +211,46 @@ export default function ManageStudentAccounts() {
   });
 
   return (
-    <div>
-      <LiveClock />
-
-      {/* Page Header */}
-      <div className="card" style={{ background: 'var(--surface-gradient)', border: '1px solid var(--primary-border)', marginBottom: '20px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-              <span className="badge badge-submitted">ADMINISTRATOR SUITE</span>
-              <span className="badge badge-pending">STUDENT PORTAL ACCESS</span>
-            </div>
-            <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--primary)', margin: 0 }}>
-              Student Account Management & Creation
-            </h2>
-            <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-              Inspect teacher advisory rosters with unregistered accounts and generate standardized student credentials.
-            </p>
-          </div>
-
+    <div className="sres-student-accounts-page">
+      {/* 1. Page Header with Tag and Actions */}
+      <PageTitle
+        title="Student Account Management"
+        emoji="🎓"
+        tag="Standardized Student Portal Access & Credentials"
+        icon={GraduationCap}
+        action={
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <button 
-              className="btn btn-secondary btn-sm"
+            <Button 
+              variant="secondary"
+              size="sm"
+              icon={RefreshCw}
               onClick={loadData}
               disabled={loading}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
-              <RefreshCw size={14} className={loading ? 'spin' : ''} />
-              <span>Refresh</span>
-            </button>
-            <button 
-              className="btn btn-secondary btn-sm"
+              Refresh
+            </Button>
+            <Button 
+              variant="secondary"
+              size="sm"
+              icon={Printer}
               onClick={() => setPrintModal(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
             >
-              <Printer size={14} />
-              <span>Print Credentials Slip</span>
-            </button>
+              Print Credentials Slip
+            </Button>
             {totals.total_unregistered > 0 && (
-              <button 
-                className="btn btn-primary btn-sm"
+              <Button 
+                variant="primary"
+                size="sm"
+                icon={Sparkles}
                 onClick={() => handleBulkCreate(null)}
                 disabled={bulkCreating}
-                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
               >
-                <Sparkles size={14} />
-                <span>{bulkCreating ? 'Creating Accounts...' : `Bulk Create All (${totals.total_unregistered})`}</span>
-              </button>
+                {bulkCreating ? 'Creating Accounts...' : `Bulk Create All (${totals.total_unregistered})`}
+              </Button>
             )}
           </div>
-        </div>
-      </div>
+        }
+      />
 
       {/* Alert Banner */}
       {alert && (
@@ -263,26 +272,30 @@ export default function ManageStudentAccounts() {
         <StatCard
           label="Unregistered Students"
           value={totals.total_unregistered}
-          icon={<UserX size={22} />}
-          color="#dc2626"
+          icon={UserX}
+          color="#EF4444"
+          bgTint="#FEF2F2"
         />
         <StatCard
           label="Registered Student Accounts"
           value={totals.total_registered}
-          icon={<UserCheck size={22} />}
-          color="#16a34a"
+          icon={UserCheck}
+          color="#10B981"
+          bgTint="#ECFDF5"
         />
         <StatCard
           label="Total Class Learners"
           value={totals.total_students}
-          icon={<GraduationCap size={22} />}
-          color="var(--primary)"
+          icon={GraduationCap}
+          color="#C2185B"
+          bgTint="#FDF2F6"
         />
         <StatCard
           label="Advisory Teachers"
           value={teachersSummary.length}
-          icon={<Building size={22} />}
-          color="#2563eb"
+          icon={Building}
+          color="#6366F1"
+          bgTint="#EEF2FF"
         />
       </div>
 
