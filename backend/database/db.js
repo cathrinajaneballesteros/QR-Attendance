@@ -330,9 +330,11 @@ function cleanupDuplicateStudents(sqlDb) {
     // 1. Purge test/junk faculty and admin accounts created during local tests
     sqlDb.run("DELETE FROM users WHERE username IN ('test1', '1234354', 'DI MATIBAG') OR username LIKE 'test.teacher.%' OR username LIKE 'office_admin_%'");
     
-    // 2. Remove test student 'LUICHE' and associated user
-    sqlDb.run("DELETE FROM users WHERE username = 'Luiche' OR student_id = 53");
-    sqlDb.run("DELETE FROM students WHERE id = 53");
+    // 2. Remove test students ('LUICHE', 'JASTEN C CABATO') and associated users
+    sqlDb.run("DELETE FROM users WHERE username IN ('Luiche', 'CabatoJasten') OR student_id IN (26, 53) OR LOWER(full_name) LIKE '%cabato%' OR LOWER(full_name) LIKE '%jasten%'");
+    sqlDb.run("DELETE FROM attendance WHERE student_id IN (26, 53)");
+    sqlDb.run("DELETE FROM student_absence_days WHERE student_id IN (26, 53)");
+    sqlDb.run("DELETE FROM students WHERE id IN (26, 53) OR LOWER(full_name) LIKE '%cabato%' OR LOWER(full_name) LIKE '%jasten%'");
 
     // 3. Link orphaned student_id = 13 attendance to student 40 if needed
     sqlDb.run('UPDATE attendance SET student_id = 40 WHERE student_id = 13 AND (SELECT COUNT(*) FROM students WHERE id = 13) = 0 AND (SELECT COUNT(*) FROM students WHERE id = 40) > 0');

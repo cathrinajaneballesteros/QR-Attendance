@@ -77,18 +77,6 @@ export default function Header({ onToggleSidebar }) {
           </div>
         </Link>
 
-        {/* Student Top Bar: Search Input (shown on desktop per student ref.png) */}
-        {isStudent && (
-          <div className="sres-student-search-bar" role="search">
-            <Search size={16} className="sres-student-search-icon" aria-hidden="true" />
-            <input 
-              type="text" 
-              placeholder="Search anything..." 
-              className="sres-student-search-input"
-              aria-label="Search portal contents"
-            />
-          </div>
-        )}
       </div>
 
       {/* Right Controls: Notification Bell, User Menu */}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { apiFetch } from '../utils/api';
 import { playSuccessChime, playWarningChime } from '../utils/sound';
 import { StatusBadge, Button } from '../components/ui';
@@ -17,7 +17,6 @@ import {
   MessageSquare, 
   Check, 
   Zap, 
-  BookOpen, 
   FileText, 
   Megaphone, 
   Lock, 
@@ -30,7 +29,8 @@ import {
   EyeOff,
   Sun,
   Moon,
-  Info
+  Info,
+  Sparkles
 } from 'lucide-react';
 import backpackBanner from '../assets/backpack-banner.png';
 
@@ -58,9 +58,13 @@ export default function StudentPortal() {
   const [currentPage, setCurrentPage] = useState(1);
   const recordsPerPage = 7;
 
+  // Active highlighted card state
+  const [highlightedCard, setHighlightedCard] = useState(null);
+  const highlightTimerRef = useRef(null);
+  const isJumpingRef = useRef(false);
+  const jumpTimeoutRef = useRef(null);
+
   // Modals state
-  const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [showGradesModal, setShowGradesModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showAllNoticesModal, setShowAllNoticesModal] = useState(false);
 
@@ -193,6 +197,101 @@ export default function StudentPortal() {
     }
   };
 
+  const jumpToSection = (sectionId) => {
+    isJumpingRef.current = true;
+    if (jumpTimeoutRef.current) clearTimeout(jumpTimeoutRef.current);
+    jumpTimeoutRef.current = setTimeout(() => {
+      isJumpingRef.current = false;
+    }, 950);
+
+    if (sectionId === 'home') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      setHighlightedCard(null);
+      window.dispatchEvent(new CustomEvent('sres-active-section-changed', { detail: { sectionId: 'home' } }));
+      return;
+    }
+
+    const targetId = `${sectionId}-section`;
+    const el = document.getElementById(targetId);
+    if (el) {
+      const headerOffset = 85;
+      const elementPosition = el.getBoundingClientRect().top;
+      const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: 'smooth'
+      });
+
+      // Highlight target card with prominent pulse & floating badge
+      setHighlightedCard(sectionId);
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = setTimeout(() => {
+        setHighlightedCard(null);
+      }, 3000);
+
+      window.dispatchEvent(new CustomEvent('sres-active-section-changed', { detail: { sectionId } }));
+    }
+  };
+
+  useEffect(() => {
+    const handleJump = (e) => {
+      if (e.detail?.sectionId) {
+        jumpToSection(e.detail.sectionId);
+      }
+    };
+    window.addEventListener('sres-jump-section', handleJump);
+
+    // Initial check from URL hash
+    if (window.location.hash) {
+      const hashId = window.location.hash.replace('#', '');
+      if (['attendance', 'history', 'notices', 'security'].includes(hashId)) {
+        setTimeout(() => jumpToSection(hashId), 400);
+      }
+    }
+
+    // Scroll spy to update active sidebar item dynamically when user scrolls manually
+    const sections = ['attendance', 'history', 'notices', 'security'];
+    const handleScroll = () => {
+      // Do not allow intervening sections to trigger scroll-spy during programmatic jump!
+      if (isJumpingRef.current) return;
+
+      if (window.scrollY < 120) {
+        window.dispatchEvent(new CustomEvent('sres-active-section-changed', { detail: { sectionId: 'home' } }));
+        return;
+      }
+      for (const id of sections) {
+        const el = document.getElementById(`${id}-section`);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top <= 250 && rect.bottom >= 180) {
+            window.dispatchEvent(new CustomEvent('sres-active-section-changed', { detail: { sectionId: id } }));
+            break;
+          }
+        }
+      }
+    };
+
+    // If user physically scrolls or swipes, immediately cancel jump lock
+    const handleUserScrollInterrupt = () => {
+      if (jumpTimeoutRef.current) clearTimeout(jumpTimeoutRef.current);
+      isJumpingRef.current = false;
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('wheel', handleUserScrollInterrupt, { passive: true });
+    window.addEventListener('touchmove', handleUserScrollInterrupt, { passive: true });
+
+    return () => {
+      window.removeEventListener('sres-jump-section', handleJump);
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('wheel', handleUserScrollInterrupt);
+      window.removeEventListener('touchmove', handleUserScrollInterrupt);
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+      if (jumpTimeoutRef.current) clearTimeout(jumpTimeoutRef.current);
+    };
+  }, []);
+
   const studentName = profile?.full_name || 'Anin, Angelito Lapitan';
   const gradeLevel = profile?.grade_level ? `Grade ${profile.grade_level}` : 'Grade 6';
   const sectionName = profile?.section || 'GREAT GENIUSES';
@@ -270,7 +369,16 @@ export default function StudentPortal() {
           </div>
 
           {/* 2. Today's Attendance Status Card (PURE TRACKING ONLY - NO CHECK-IN BUTTON) */}
-          <section id="attendance-section" className={`sres-student-status-card sres-status-${today?.status || 'pending'}`}>
+          <section 
+            id="attendance-section" 
+            className={`sres-student-status-card sres-status-${today?.status || 'pending'} ${highlightedCard === 'attendance' ? 'sres-card-highlighted' : ''}`}
+          >
+            {highlightedCard === 'attendance' && (
+              <div className="sres-highlight-focus-badge" role="status">
+                <Sparkles size={13} />
+                <span>Attendance Checker Active</span>
+              </div>
+            )}
             <div className="sres-student-status-header-wrap">
               <div className="sres-student-status-icon-circle">
                 {today?.status === 'ontime' ? (
@@ -336,9 +444,15 @@ export default function StudentPortal() {
             </div>
           </section>
 
-          {/* 3. Stat Cards Row (4 Cards Matching student ref.png) */}
+          {/* 3. Stat Cards Row (Clickable Filters that Jump & Highlight History) */}
           <div className="sres-student-stats-row">
-            <div className="sres-student-stat-card">
+            <div 
+              className="sres-student-stat-card"
+              onClick={() => { setStatusFilter('ONTIME'); setCurrentPage(1); jumpToSection('history'); }}
+              role="button"
+              tabIndex={0}
+              title="Click to view On-Time records in History"
+            >
               <div className="sres-student-stat-icon sres-stat-green">
                 <CheckCircle2 size={20} strokeWidth={2.4} />
               </div>
@@ -349,7 +463,13 @@ export default function StudentPortal() {
               <ChevronRight size={16} className="sres-student-stat-chevron" />
             </div>
 
-            <div className="sres-student-stat-card">
+            <div 
+              className="sres-student-stat-card"
+              onClick={() => { setStatusFilter('LATE'); setCurrentPage(1); jumpToSection('history'); }}
+              role="button"
+              tabIndex={0}
+              title="Click to view Late records in History"
+            >
               <div className="sres-student-stat-icon sres-stat-amber">
                 <Clock size={20} strokeWidth={2.4} />
               </div>
@@ -360,7 +480,13 @@ export default function StudentPortal() {
               <ChevronRight size={16} className="sres-student-stat-chevron" />
             </div>
 
-            <div className="sres-student-stat-card">
+            <div 
+              className="sres-student-stat-card"
+              onClick={() => { setStatusFilter('ABSENT'); setCurrentPage(1); jumpToSection('history'); }}
+              role="button"
+              tabIndex={0}
+              title="Click to view Absent records in History"
+            >
               <div className="sres-student-stat-icon sres-stat-red">
                 <UserX size={20} strokeWidth={2.4} />
               </div>
@@ -371,7 +497,13 @@ export default function StudentPortal() {
               <ChevronRight size={16} className="sres-student-stat-chevron" />
             </div>
 
-            <div className="sres-student-stat-card">
+            <div 
+              className="sres-student-stat-card"
+              onClick={() => { setStatusFilter('ALL'); setCurrentPage(1); jumpToSection('history'); }}
+              role="button"
+              tabIndex={0}
+              title="Click to view overall attendance in History"
+            >
               <div className="sres-student-stat-icon sres-stat-blue">
                 <TrendingUp size={20} strokeWidth={2.4} />
               </div>
@@ -384,23 +516,21 @@ export default function StudentPortal() {
           </div>
 
           {/* 4. Attendance History Card */}
-          <section id="history-section" className="sres-student-history-card">
+          <section 
+            id="history-section" 
+            className={`sres-student-history-card ${highlightedCard === 'history' ? 'sres-card-highlighted' : ''}`}
+          >
+            {highlightedCard === 'history' && (
+              <div className="sres-highlight-focus-badge" role="status">
+                <Sparkles size={13} />
+                <span>Attendance History Active</span>
+              </div>
+            )}
             <div className="sres-student-card-header">
               <div className="sres-student-card-header-left">
                 <Calendar size={20} className="sres-student-header-icon" />
                 <h3 className="sres-student-card-title">Attendance History</h3>
               </div>
-              <button 
-                type="button" 
-                className="sres-student-view-all-pill"
-                onClick={() => {
-                  setStatusFilter('ALL');
-                  setHistorySearch('');
-                }}
-              >
-                <span>View All</span>
-                <ChevronRight size={14} />
-              </button>
             </div>
 
             {/* Filter Chips */}
@@ -447,13 +577,12 @@ export default function StudentPortal() {
                     <th>Time In</th>
                     <th>Status</th>
                     <th>Venue</th>
-                    <th style={{ width: '40px' }}></th>
                   </tr>
                 </thead>
                 <tbody>
                   {paginatedRecords.length === 0 ? (
                     <tr>
-                      <td colSpan="5" className="sres-student-table-empty">
+                      <td colSpan="4" className="sres-student-table-empty">
                         No attendance records match the selected filter.
                       </td>
                     </tr>
@@ -476,9 +605,6 @@ export default function StudentPortal() {
                           </td>
                           <td className="sres-student-table-venue">
                             {r.room || 'Room 101 – Verified Teacher'}
-                          </td>
-                          <td className="sres-student-table-chevron">
-                            <ChevronRight size={15} />
                           </td>
                         </tr>
                       );
@@ -532,7 +658,7 @@ export default function StudentPortal() {
             RIGHT COLUMN (~1/3 on desktop)
            ======================================================== */}
         <aside className="sres-student-col-side">
-          {/* Card 1: Quick Actions (2x2 Grid matching student ref.png) */}
+          {/* Card 1: Quick Actions */}
           <div className="sres-student-side-card">
             <div className="sres-student-card-header">
               <div className="sres-student-card-header-left">
@@ -545,10 +671,7 @@ export default function StudentPortal() {
               <button
                 type="button"
                 className="sres-student-action-tile"
-                onClick={() => {
-                  const el = document.getElementById('history-section');
-                  if (el) el.scrollIntoView({ behavior: 'smooth' });
-                }}
+                onClick={() => jumpToSection('history')}
               >
                 <div className="sres-student-action-icon">
                   <Calendar size={18} />
@@ -560,46 +683,40 @@ export default function StudentPortal() {
               <button
                 type="button"
                 className="sres-student-action-tile"
-                onClick={() => setShowScheduleModal(true)}
-              >
-                <div className="sres-student-action-icon">
-                  <BookOpen size={18} />
-                </div>
-                <span className="sres-student-action-label">My Class Schedule</span>
-                <ChevronRight size={15} className="sres-student-action-chevron" />
-              </button>
-
-              <button
-                type="button"
-                className="sres-student-action-tile"
-                onClick={() => setShowGradesModal(true)}
-              >
-                <div className="sres-student-action-icon">
-                  <FileText size={18} />
-                </div>
-                <span className="sres-student-action-label">View Grades</span>
-                <ChevronRight size={15} className="sres-student-action-chevron" />
-              </button>
-
-              <button
-                type="button"
-                className="sres-student-action-tile"
-                onClick={() => {
-                  const el = document.getElementById('notices-section');
-                  if (el) el.scrollIntoView({ behavior: 'smooth' });
-                }}
+                onClick={() => jumpToSection('notices')}
               >
                 <div className="sres-student-action-icon">
                   <Megaphone size={18} />
                 </div>
-                <span className="sres-student-action-label">Announcements</span>
+                <span className="sres-student-action-label">School Announcements</span>
+                <ChevronRight size={15} className="sres-student-action-chevron" />
+              </button>
+
+              <button
+                type="button"
+                className="sres-student-action-tile"
+                onClick={() => setShowPasswordModal(true)}
+              >
+                <div className="sres-student-action-icon">
+                  <KeyRound size={18} />
+                </div>
+                <span className="sres-student-action-label">Change Password</span>
                 <ChevronRight size={15} className="sres-student-action-chevron" />
               </button>
             </div>
           </div>
 
           {/* Card 2: Recent Notices */}
-          <div id="notices-section" className="sres-student-side-card">
+          <div 
+            id="notices-section" 
+            className={`sres-student-side-card ${highlightedCard === 'notices' ? 'sres-card-highlighted' : ''}`}
+          >
+            {highlightedCard === 'notices' && (
+              <div className="sres-highlight-focus-badge" role="status">
+                <Sparkles size={13} />
+                <span>Announcements Active</span>
+              </div>
+            )}
             <div className="sres-student-card-header">
               <div className="sres-student-card-header-left">
                 <Megaphone size={18} className="sres-student-header-icon" />
@@ -652,12 +769,18 @@ export default function StudentPortal() {
           {/* Card 3: Security & Password Card */}
           <div 
             id="security-section"
-            className="sres-student-side-card sres-student-security-card"
+            className={`sres-student-side-card sres-student-security-card ${highlightedCard === 'security' ? 'sres-card-highlighted' : ''}`}
             onClick={() => setShowPasswordModal(true)}
             role="button"
             tabIndex={0}
             onKeyDown={(e) => { if (e.key === 'Enter') setShowPasswordModal(true); }}
           >
+            {highlightedCard === 'security' && (
+              <div className="sres-highlight-focus-badge" role="status">
+                <Sparkles size={13} />
+                <span>Security Settings Active</span>
+              </div>
+            )}
             <div className="sres-student-security-left">
               <div className="sres-student-security-icon-circle">
                 <Lock size={18} />
@@ -676,65 +799,8 @@ export default function StudentPortal() {
       </div>
 
       {/* ========================================================
-          MODALS: Class Schedule, Grades Info, Change Password
+          MODALS: Change Password, All Notices
          ======================================================== */}
-
-      {/* Class Schedule Modal */}
-      {showScheduleModal && (
-        <div className="sres-login-info-modal-backdrop" onClick={() => setShowScheduleModal(false)}>
-          <div className="sres-login-info-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="sres-login-info-modal-header">
-              <div className="sres-login-info-modal-icon">
-                <BookOpen size={22} />
-              </div>
-              <h3>Class Schedule — Grade 6</h3>
-            </div>
-            <div style={{ fontSize: '0.88rem', color: '#475569', lineHeight: 1.6, marginBottom: '20px' }}>
-              <div style={{ padding: '8px 12px', background: '#FDF2F6', borderRadius: '8px', marginBottom: '10px' }}>
-                <strong>Section:</strong> GREAT GENIUSES • <strong>Room:</strong> 101<br />
-                <strong>Adviser:</strong> Ms. Aragon
-              </div>
-              <ul style={{ paddingLeft: '20px', margin: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <li><strong>07:30 AM – 07:45 AM:</strong> Morning Assembly &amp; Attendance</li>
-                <li><strong>07:45 AM – 09:45 AM:</strong> Mathematics &amp; Science</li>
-                <li><strong>09:45 AM – 10:05 AM:</strong> Recess Break</li>
-                <li><strong>10:05 AM – 11:45 AM:</strong> English &amp; Filipino</li>
-                <li><strong>01:00 PM – 03:00 PM:</strong> Araling Panlipunan &amp; MAPEH</li>
-                <li><strong>03:00 PM – 04:00 PM:</strong> Homeroom &amp; Remediation</li>
-              </ul>
-            </div>
-            <div className="sres-login-info-modal-actions">
-              <Button variant="primary" size="sm" onClick={() => setShowScheduleModal(false)}>
-                Close Schedule
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Grades Disclaimer Modal */}
-      {showGradesModal && (
-        <div className="sres-login-info-modal-backdrop" onClick={() => setShowGradesModal(false)}>
-          <div className="sres-login-info-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="sres-login-info-modal-header">
-              <div className="sres-login-info-modal-icon">
-                <FileText size={22} />
-              </div>
-              <h3>Academic Grades &amp; SF9 Report Cards</h3>
-            </div>
-            <p>
-              In accordance with DepEd guidelines, academic grades (Form 137 / 138) are officially processed
-              by your class adviser at the end of each grading quarter and distributed during Parent-Teacher Conferences.
-              This student portal specializes exclusively in <strong>daily attendance monitoring and SF2 compliance</strong>.
-            </p>
-            <div className="sres-login-info-modal-actions">
-              <Button variant="primary" size="sm" onClick={() => setShowGradesModal(false)}>
-                Understood
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Change Password Modal */}
       {showPasswordModal && (

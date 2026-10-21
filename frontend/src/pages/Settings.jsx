@@ -415,10 +415,17 @@ export default function Settings() {
               <span>Bell: {formatTime12(settings.school_start)}</span>
             </span>
 
-            <span className="hud-chip">
-              <Clock size={13} strokeWidth={2} />
-              <span>Late: {formatTime12(settings.late_after)}</span>
-            </span>
+            {settings.late_after && settings.late_after !== settings.school_start ? (
+              <span className="hud-chip" style={{ color: '#d97706', borderColor: '#fef3c7', background: '#fffbeb' }}>
+                <Clock size={13} strokeWidth={2} />
+                <span>Late After: {formatTime12(settings.late_after)}</span>
+              </span>
+            ) : (
+              <span className="hud-chip">
+                <Clock size={13} strokeWidth={2} />
+                <span>Cutoff: {formatTime12(settings.attendance_deadline || '16:00')}</span>
+              </span>
+            )}
           </div>
         }
       />

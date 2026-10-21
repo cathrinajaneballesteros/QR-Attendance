@@ -163,7 +163,6 @@ INSERT INTO students (full_name, sex, qr_code, is_enrolled, enrollment_status) V
   ('PACHOCA, JOHN ROBERT DELA CRUZ', 'M', 'QR-PACHOCAJOHNR-M10', 1, 'officially_enrolled'),
   ('PULANCO, JERALD GULOY', 'M', 'QR-PULANCOJERAL-M11', 1, 'officially_enrolled'),
   ('SORIANO, MARK ANGELO GAYAP', 'M', 'QR-SORIANOMARKA-M12', 1, 'officially_enrolled'),
-  ('JASTEN C CABATO', 'M', 'QR-JASTENCCAB-M13', 1, 'officially_enrolled'),
   -- Female Students
   ('AGOTO, MILAGROS RINGOR', 'F', 'QR-AGOTOMILAGRO-F1', 1, 'officially_enrolled'),
   ('ANCHETA, KRISTINE HALOG', 'F', 'QR-ANCHETAKRIST-F2', 1, 'officially_enrolled'),

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { 
@@ -14,9 +14,10 @@ import {
   Clock,
   Calendar,
   Bell,
-  X
+  X,
+  Sparkles
 } from 'lucide-react';
-import backpackCard from '../../assets/backpack-card.png';
+import backpackCard from '../../assets/backpack-card.jpg';
 
 export default function Sidebar({ isOpen, onClose }) {
   const { user } = useAuth();
@@ -24,6 +25,25 @@ export default function Sidebar({ isOpen, onClose }) {
 
   const isAdmin = user?.role === 'admin';
   const isStudent = user?.role === 'student';
+  const [activeStudentSection, setActiveStudentSection] = useState('home');
+  const clickLockRef = useRef(false);
+  const lockTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (!isStudent) return;
+    const handleActiveChanged = (e) => {
+      // Do not allow scroll-spy to override active section while scrolling to target
+      if (clickLockRef.current) return;
+      if (e.detail?.sectionId) {
+        setActiveStudentSection(e.detail.sectionId);
+      }
+    };
+    window.addEventListener('sres-active-section-changed', handleActiveChanged);
+    return () => {
+      window.removeEventListener('sres-active-section-changed', handleActiveChanged);
+      if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
+    };
+  }, [isStudent]);
 
   // Navigation Links strictly matching user role
   const teacherNavItems = [
@@ -44,24 +64,24 @@ export default function Sidebar({ isOpen, onClose }) {
     { to: '/admin/settings', label: 'Settings', icon: SettingsIcon },
   ];
 
-  // Student Navigation strictly matching student ref.png
+  // Student Navigation strictly matching student sections
   const studentNavItems = [
-    { to: '/student/portal', label: 'Home', icon: LayoutDashboard, exact: true },
-    { to: '/student/portal#attendance', label: 'My Attendance', icon: Clock, hash: '#attendance' },
-    { to: '/student/portal#history', label: 'Attendance History', icon: Calendar, hash: '#history' },
-    { to: '/student/portal#notices', label: 'Notifications', icon: Bell, badge: 5, hash: '#notices' },
-    { to: '/student/portal#security', label: 'Settings', icon: SettingsIcon, hash: '#security' },
+    { id: 'home', label: 'Home', icon: LayoutDashboard },
+    { id: 'attendance', label: 'My Attendance', icon: Clock },
+    { id: 'history', label: 'Attendance History', icon: Calendar },
+    { id: 'notices', label: 'Notifications', icon: Bell, badge: 5 },
+    { id: 'security', label: 'Settings', icon: SettingsIcon },
   ];
 
-  const navItems = isStudent ? studentNavItems : (isAdmin ? adminNavItems : teacherNavItems);
-
-  const handleItemClick = (item) => {
+  const handleStudentItemClick = (item) => {
     if (isOpen && onClose) onClose();
-    if (item.hash) {
-      const targetId = item.hash.replace('#', '') + '-section';
-      const el = document.getElementById(targetId);
-      if (el) el.scrollIntoView({ behavior: 'smooth' });
-    }
+    setActiveStudentSection(item.id);
+    clickLockRef.current = true;
+    if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
+    lockTimerRef.current = setTimeout(() => {
+      clickLockRef.current = false;
+    }, 950);
+    window.dispatchEvent(new CustomEvent('sres-jump-section', { detail: { sectionId: item.id } }));
   };
 
   return (
@@ -91,40 +111,67 @@ export default function Sidebar({ isOpen, onClose }) {
 
         {/* Navigation List */}
         <nav className="sres-nav-menu">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = item.exact 
-              ? location.pathname === item.to && !location.hash
-              : (item.hash ? location.hash === item.hash : (location.pathname === item.to || location.pathname.startsWith(item.to + '/')));
-
-            return (
-              <NavLink
-                key={item.label}
-                to={item.to}
-                onClick={() => handleItemClick(item)}
-                className={`sres-nav-item ${isActive ? 'active' : ''}`}
-              >
-                <Icon size={19} strokeWidth={1.8} className="sres-nav-icon" />
-                <span className="sres-nav-label">{item.label}</span>
-                {item.badge && (
-                  <span className="sres-nav-badge">{item.badge}</span>
-                )}
-              </NavLink>
-            );
-          })}
+          {isStudent ? (
+            studentNavItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeStudentSection === item.id;
+              return (
+                <a
+                  href={`#${item.id}`}
+                  key={item.id}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleStudentItemClick(item);
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  className={`sres-nav-item ${isActive ? 'active' : ''}`}
+                >
+                  <Icon size={19} strokeWidth={1.8} className="sres-nav-icon" />
+                  <span className="sres-nav-label">{item.label}</span>
+                  {item.badge && (
+                    <span className="sres-nav-badge">{item.badge}</span>
+                  )}
+                </a>
+              );
+            })
+          ) : (
+            (isAdmin ? adminNavItems : teacherNavItems).map((item) => {
+              const Icon = item.icon;
+              return (
+                <NavLink
+                  key={item.label}
+                  to={item.to}
+                  onClick={() => { if (isOpen && onClose) onClose(); }}
+                  className={({ isActive }) => `sres-nav-item ${isActive ? 'active' : ''}`}
+                >
+                  <Icon size={19} strokeWidth={1.8} className="sres-nav-icon" />
+                  <span className="sres-nav-label">{item.label}</span>
+                  {item.badge && (
+                    <span className="sres-nav-badge">{item.badge}</span>
+                  )}
+                </NavLink>
+              );
+            })
+          )}
         </nav>
 
-        {/* Student Sidebar: Motivational Card with 3D Backpack Graphic (from student ref.png) */}
+        {/* Student Sidebar: Motivational Card with 3D Backpack Graphic */}
         {isStudent && (
           <div className="sres-sidebar-motivate-card">
-            <img 
-              src={backpackCard} 
-              alt="Backpack and books" 
-              className="sres-sidebar-motivate-img"
-            />
+            <div className="sres-sidebar-motivate-img-wrap">
+              <img 
+                src={backpackCard} 
+                alt="Student backpack" 
+                className="sres-sidebar-motivate-img"
+              />
+            </div>
             <p className="sres-sidebar-motivate-quote">
               Small steps every day, big dreams tomorrow!
             </p>
+            <div className="sres-sidebar-motivate-stars" aria-hidden="true">
+              <Sparkles size={13} style={{ color: '#FBBF24', display: 'inline-block' }} />
+            </div>
           </div>
         )}
       </aside>
