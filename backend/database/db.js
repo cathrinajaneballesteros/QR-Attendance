@@ -260,8 +260,8 @@ async function initSqliteDatabase() {
     late_after: '08:00',
     sms_enabled: '0',
     sms_provider: 'textbee',
-    textbee_api_key: '',
-    textbee_device_id: '',
+    textbee_api_key: 'txb_qQDnUgyok84rrtJJ1kG8qkZMwWGt0wNT',
+    textbee_device_id: '6ad7fcb9ab534081692d485f',
     student_face_verification: '1',
     scanner_verification_mode: 'both'
   };
@@ -272,6 +272,14 @@ async function initSqliteDatabase() {
       [key, value]
     );
   }
+
+  // Ensure hardcoded TextBee gateway credentials
+  sqlDb.run(
+    "UPDATE app_settings SET setting_value = 'txb_qQDnUgyok84rrtJJ1kG8qkZMwWGt0wNT' WHERE setting_key = 'textbee_api_key' AND (setting_value IS NULL OR setting_value = '')"
+  );
+  sqlDb.run(
+    "UPDATE app_settings SET setting_value = '6ad7fcb9ab534081692d485f' WHERE setting_key = 'textbee_device_id' AND (setting_value IS NULL OR setting_value = '')"
+  );
 
   // Default accounts
   const admin = sqlDb.exec("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
@@ -649,8 +657,8 @@ async function initPgDatabase(connectionString) {
     ['late_after', '08:00'],
     ['sms_enabled', '0'],
     ['sms_provider', 'textbee'],
-    ['textbee_api_key', ''],
-    ['textbee_device_id', '']
+    ['textbee_api_key', 'txb_qQDnUgyok84rrtJJ1kG8qkZMwWGt0wNT'],
+    ['textbee_device_id', '6ad7fcb9ab534081692d485f']
   ];
 
   for (const [key, val] of defaults) {
@@ -659,6 +667,14 @@ async function initPgDatabase(connectionString) {
       [key, val]
     );
   }
+
+  // Ensure hardcoded TextBee gateway credentials
+  await pool.query(
+    "UPDATE app_settings SET setting_value = 'txb_qQDnUgyok84rrtJJ1kG8qkZMwWGt0wNT' WHERE setting_key = 'textbee_api_key' AND (setting_value IS NULL OR setting_value = '')"
+  );
+  await pool.query(
+    "UPDATE app_settings SET setting_value = '6ad7fcb9ab534081692d485f' WHERE setting_key = 'textbee_device_id' AND (setting_value IS NULL OR setting_value = '')"
+  );
 
   // Ensure default accounts exist
   const existingAdmin = await pool.query("SELECT id FROM users WHERE role = 'admin' LIMIT 1");

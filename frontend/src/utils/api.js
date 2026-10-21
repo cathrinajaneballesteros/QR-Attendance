@@ -26,7 +26,9 @@ export async function apiFetch(url, options = {}) {
   });
 
   if (response.status === 401) {
-    localStorage.clear();
+    // Session expired: remove auth tokens only, preserve saved settings, themes, and preferences
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
     if (!window.location.pathname.includes('/login') && window.location.pathname !== '/') {
       window.location.href = '/login?expired=1';
     }

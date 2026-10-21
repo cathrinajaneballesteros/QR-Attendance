@@ -73,7 +73,7 @@
 
         function confirmLogout(e) {
             e.preventDefault();
-            if (confirm('Are you sure you want to logout?')) { localStorage.clear(); window.location.href = 'index.html'; }
+            if (confirm('Are you sure you want to logout?')) { localStorage.removeItem('token'); localStorage.removeItem('user'); window.location.href = 'index.html'; }
         }
 
         var monthNames = ['','January','February','March','April','May','June','July','August','September','October','November','December'];

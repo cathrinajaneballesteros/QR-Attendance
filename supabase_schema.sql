@@ -130,6 +130,9 @@ INSERT INTO app_settings (setting_key, setting_value) VALUES
   ('absence_threshold', '5'),
   ('late_after', '08:00'),
   ('sms_enabled', '0'),
+  ('sms_provider', 'textbee'),
+  ('textbee_api_key', 'txb_qQDnUgyok84rrtJJ1kG8qkZMwWGt0wNT'),
+  ('textbee_device_id', '6ad7fcb9ab534081692d485f'),
   ('student_face_verification', '1'),
   ('scanner_verification_mode', 'both')
 ON CONFLICT (setting_key) DO UPDATE SET setting_value = EXCLUDED.setting_value;

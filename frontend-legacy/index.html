@@ -116,7 +116,8 @@
         } else if (data.user.role === 'teacher') {
           window.location.replace('dashboard.html');
         } else {
-          localStorage.clear();
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
           showError('This account has an unrecognized role.');
         }
       } catch (error) {

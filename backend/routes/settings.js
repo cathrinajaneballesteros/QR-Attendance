@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
+const jwt = require('jsonwebtoken');
+const JWT_SECRET = process.env.JWT_SECRET || 'sta-rosa-qr-secret-key-grade6-2026';
+
+const HARDCODED_TEXTBEE_API_KEY = 'txb_qQDnUgyok84rrtJJ1kG8qkZMwWGt0wNT';
+const HARDCODED_TEXTBEE_DEVICE_ID = '6ad7fcb9ab534081692d485f';
 
 const defaults = {
     gps_enabled: '0',
@@ -21,8 +26,8 @@ const defaults = {
     late_after: '08:00',
     sms_enabled: '0',
     sms_provider: 'textbee',
-    textbee_api_key: '',
-    textbee_device_id: '',
+    textbee_api_key: HARDCODED_TEXTBEE_API_KEY,
+    textbee_device_id: HARDCODED_TEXTBEE_DEVICE_ID,
     philsms_api_token: '',
     philsms_sender_id: 'PhilSMS',
     android_gateway_url: '',
@@ -46,10 +51,45 @@ async function getSettings(db) {
         stored[row.setting_key] = row.setting_value;
     });
 
-    return Object.assign({}, defaults, stored);
+    const merged = Object.assign({}, defaults, stored);
+
+    // Hard-coded TextBee credentials invariant: ensure never empty
+    if (!merged.textbee_api_key || !String(merged.textbee_api_key).trim()) {
+        merged.textbee_api_key = HARDCODED_TEXTBEE_API_KEY;
+    }
+    if (!merged.textbee_device_id || !String(merged.textbee_device_id).trim()) {
+        merged.textbee_device_id = HARDCODED_TEXTBEE_DEVICE_ID;
+    }
+
+    return merged;
 }
 
-router.get('/', auth, async function (req, res) {
+function optionalAuth(req, res, next) {
+    try {
+        let authHeader = req.headers['authorization'] || req.headers['Authorization'] || '';
+        let token = '';
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            token = authHeader.substring(7);
+        } else if (authHeader) {
+            token = authHeader;
+        } else if (req.query && req.query.token) {
+            token = req.query.token;
+        }
+        if (token && token !== 'null' && token !== 'undefined') {
+            const secret = process.env.JWT_SECRET || JWT_SECRET;
+            jwt.verify(token, secret, function(err, decoded) {
+                if (!err && decoded) {
+                    req.user = decoded;
+                }
+                next();
+            });
+            return;
+        }
+    } catch (e) {}
+    next();
+}
+
+router.get('/', optionalAuth, async function (req, res) {
     try {
         const settings = await getSettings(req.app.get('db'));
         res.json(settings);
@@ -88,6 +128,14 @@ router.put('/', auth, async function (req, res) {
         if (req.user.role !== 'admin') {
             for (const key of adminOnlyKeys) {
                 delete payload[key];
+            }
+        } else {
+            // Keep hard-coded TextBee defaults if admin provides blank values
+            if (payload.textbee_api_key !== undefined && !String(payload.textbee_api_key).trim()) {
+                payload.textbee_api_key = HARDCODED_TEXTBEE_API_KEY;
+            }
+            if (payload.textbee_device_id !== undefined && !String(payload.textbee_device_id).trim()) {
+                payload.textbee_device_id = HARDCODED_TEXTBEE_DEVICE_ID;
             }
         }
 

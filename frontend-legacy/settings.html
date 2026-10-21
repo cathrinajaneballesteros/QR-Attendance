@@ -173,7 +173,8 @@
 
     function logout(event) {
       event.preventDefault();
-      localStorage.clear();
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
       location.href = 'index.html';
     }
 

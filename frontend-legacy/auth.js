@@ -9,7 +9,8 @@ try {
 }
 
 if (!token || !user) {
-    localStorage.clear();
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
     if (window.location.pathname.indexOf('index.html') === -1 && window.location.pathname !== '/') {
         window.location.href = 'index.html';
     }
@@ -37,7 +38,8 @@ async function authFetch(url, options) {
             // Token expired - try to check if server restarted
             var confirmRelogin = confirm('Your session has expired. Please login again.');
             if (confirmRelogin) {
-                localStorage.clear();
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
                 window.location.href = 'index.html';
             }
             return null;
@@ -53,7 +55,8 @@ async function authFetch(url, options) {
 function confirmLogout(e) {
     if (e) e.preventDefault();
     if (confirm('Are you sure you want to logout?')) {
-        localStorage.clear();
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
         window.location.href = 'index.html';
     }
 }

@@ -43,6 +43,9 @@ import {
   StatusBadge
 } from '../components/ui';
 
+const HARDCODED_TEXTBEE_API_KEY = 'txb_qQDnUgyok84rrtJJ1kG8qkZMwWGt0wNT';
+const HARDCODED_TEXTBEE_DEVICE_ID = '6ad7fcb9ab534081692d485f';
+
 export default function Settings() {
   const { user, updateUser } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -71,38 +74,47 @@ export default function Settings() {
   const [adminSaving, setAdminSaving] = useState(false);
   const [adminAlert, setAdminAlert] = useState(null);
 
-  const [settings, setSettings] = useState({
-    gps_enabled: '0',
-    attendance_mode: 'onsite',
-    room_name: 'Room 101 - Grade 6 Great Geniuses',
-    qr_code_type: 'fixed',
-    attendance_theme: 'rose',
-    block_unenrolled: '1',
-    geofence_radius_m: '100',
-    school_latitude: '',
-    school_longitude: '',
-    school_start: '08:00',
-    late_after: '08:00',
-    attendance_deadline: '16:00',
-    absence_threshold: '5',
-    qr_enabled: '1',
-    qr_start: '',
-    qr_end: '',
-    sms_enabled: '0',
-    sms_provider: 'textbee',
-    textbee_api_key: '',
-    textbee_device_id: '',
-    philsms_api_token: '',
-    philsms_sender_id: 'PhilSMS',
-    android_gateway_url: '',
-    android_gateway_key: '',
-    semaphore_api_key: '',
-    sms_sender_name: '',
-    twilio_account_sid: '',
-    twilio_auth_token: '',
-    twilio_phone_number: '',
-    student_face_verification: '1',
-    scanner_verification_mode: 'both'
+  const [settings, setSettings] = useState(() => {
+    let initial = {
+      gps_enabled: '0',
+      attendance_mode: 'onsite',
+      room_name: 'Room 101 - Grade 6 Great Geniuses',
+      qr_code_type: 'fixed',
+      attendance_theme: 'rose',
+      block_unenrolled: '1',
+      geofence_radius_m: '100',
+      school_latitude: '',
+      school_longitude: '',
+      school_start: '08:00',
+      late_after: '08:00',
+      attendance_deadline: '16:00',
+      absence_threshold: '5',
+      qr_enabled: '1',
+      qr_start: '',
+      qr_end: '',
+      sms_enabled: '0',
+      sms_provider: 'textbee',
+      textbee_api_key: HARDCODED_TEXTBEE_API_KEY,
+      textbee_device_id: HARDCODED_TEXTBEE_DEVICE_ID,
+      philsms_api_token: '',
+      philsms_sender_id: 'PhilSMS',
+      android_gateway_url: '',
+      android_gateway_key: '',
+      semaphore_api_key: '',
+      sms_sender_name: '',
+      twilio_account_sid: '',
+      twilio_auth_token: '',
+      twilio_phone_number: '',
+      student_face_verification: '1',
+      scanner_verification_mode: 'both'
+    };
+    try {
+      const cached = localStorage.getItem('sres_saved_settings');
+      if (cached) {
+        initial = { ...initial, ...JSON.parse(cached) };
+      }
+    } catch (e) {}
+    return initial;
   });
 
   const [initialSettings, setInitialSettings] = useState(null);
@@ -132,8 +144,8 @@ export default function Settings() {
         body: JSON.stringify({
           phone: testPhone.trim(),
           provider: 'textbee',
-          textbeeApiKey: settings.textbee_api_key || '',
-          textbeeDeviceId: settings.textbee_device_id || ''
+          textbeeApiKey: settings.textbee_api_key || HARDCODED_TEXTBEE_API_KEY,
+          textbeeDeviceId: settings.textbee_device_id || HARDCODED_TEXTBEE_DEVICE_ID
         })
       });
       const data = await res.json();
@@ -158,8 +170,28 @@ export default function Settings() {
 
       if (setRes.ok) {
         const data = await setRes.json();
-        setSettings(prev => ({ ...prev, ...data }));
-        setInitialSettings(data);
+        const merged = {
+          ...data,
+          textbee_api_key: data.textbee_api_key || HARDCODED_TEXTBEE_API_KEY,
+          textbee_device_id: data.textbee_device_id || HARDCODED_TEXTBEE_DEVICE_ID
+        };
+        setSettings(prev => ({ ...prev, ...merged }));
+        setInitialSettings(merged);
+        try {
+          localStorage.setItem('sres_saved_settings', JSON.stringify(merged));
+          if (merged.attendance_theme) {
+            localStorage.setItem('attendance_theme', merged.attendance_theme);
+          }
+        } catch (e) {}
+      } else {
+        try {
+          const cached = localStorage.getItem('sres_saved_settings');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            setSettings(prev => ({ ...prev, ...parsed }));
+            setInitialSettings(parsed);
+          }
+        } catch (e) {}
       }
       if (stRes.ok) {
         const studentsList = await stRes.json();
@@ -221,16 +253,38 @@ export default function Settings() {
     if (e && e.preventDefault) e.preventDefault();
     setSaving(true);
     try {
+      const payload = {
+        ...settings,
+        textbee_api_key: settings.textbee_api_key || HARDCODED_TEXTBEE_API_KEY,
+        textbee_device_id: settings.textbee_device_id || HARDCODED_TEXTBEE_DEVICE_ID
+      };
+
       const response = await apiFetch('/api/settings', {
         method: 'PUT',
-        body: JSON.stringify(settings)
+        body: JSON.stringify(payload)
       });
 
       if (response.ok) {
-        showAlert('Attendance policies and classroom settings saved successfully!');
-        setInitialSettings({ ...settings });
-        if (settings.attendance_theme && settings.attendance_theme !== theme) {
-          changeTheme(settings.attendance_theme);
+        const data = await response.json();
+        const finalData = {
+          ...data,
+          textbee_api_key: data.textbee_api_key || HARDCODED_TEXTBEE_API_KEY,
+          textbee_device_id: data.textbee_device_id || HARDCODED_TEXTBEE_DEVICE_ID
+        };
+        showAlert('Attendance policies and classroom settings saved permanently!');
+        setSettings(prev => ({ ...prev, ...finalData }));
+        setInitialSettings({ ...finalData });
+
+        // Permanently persist to localStorage so settings are retained even after logging out
+        try {
+          localStorage.setItem('sres_saved_settings', JSON.stringify(finalData));
+          if (finalData.attendance_theme) {
+            localStorage.setItem('attendance_theme', finalData.attendance_theme);
+          }
+        } catch (storageErr) {}
+
+        if (finalData.attendance_theme && finalData.attendance_theme !== theme) {
+          changeTheme(finalData.attendance_theme);
         }
       } else {
         const err = await response.json();
@@ -1173,12 +1227,15 @@ export default function Settings() {
                   {/* Form Grid for TextBee Credentials */}
                   <div className="form-grid" style={{ marginBottom: '16px' }}>
                     <div className="form-group">
-                      <label className="form-label">TextBee API Key *</label>
+                      <label className="form-label">
+                        <span>TextBee API Key *</span>
+                        <span className="badge badge-success" style={{ marginLeft: '8px', fontSize: '0.68rem', padding: '1px 6px' }}>Hardcoded Default</span>
+                      </label>
                       <div style={{ position: 'relative' }}>
                         <input
                           type={showTextbeeKey ? 'text' : 'password'}
                           className="form-input"
-                          placeholder="e.g. tb_live_xxxx or your API key"
+                          placeholder={`Hardcoded: ${HARDCODED_TEXTBEE_API_KEY}`}
                           value={settings.textbee_api_key || ''}
                           onChange={(e) => setSettings({ ...settings, textbee_api_key: e.target.value })}
                         />
@@ -1190,17 +1247,26 @@ export default function Settings() {
                           {showTextbeeKey ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
                       </div>
+                      <small style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                        Default: <code style={{ fontSize: '0.72rem' }}>txb_qQDn...0wNT</code> (hardcoded for administrator)
+                      </small>
                     </div>
 
                     <div className="form-group">
-                      <label className="form-label">Device ID (Optional)</label>
+                      <label className="form-label">
+                        <span>Device ID (Optional)</span>
+                        <span className="badge badge-success" style={{ marginLeft: '8px', fontSize: '0.68rem', padding: '1px 6px' }}>Hardcoded Default</span>
+                      </label>
                       <input
                         type="text"
                         className="form-input"
-                        placeholder="Leave blank to use default linked phone"
+                        placeholder={`Hardcoded: ${HARDCODED_TEXTBEE_DEVICE_ID}`}
                         value={settings.textbee_device_id || ''}
                         onChange={(e) => setSettings({ ...settings, textbee_device_id: e.target.value })}
                       />
+                      <small style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block' }}>
+                        Default: <code style={{ fontSize: '0.72rem' }}>6ad7fcb9ab534081692d485f</code>
+                      </small>
                     </div>
                   </div>
 

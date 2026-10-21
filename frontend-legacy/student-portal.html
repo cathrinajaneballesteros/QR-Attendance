@@ -311,7 +311,8 @@
     }
 
     function logout() {
-      localStorage.clear();
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
       location.href = 'index.html';
     }
 

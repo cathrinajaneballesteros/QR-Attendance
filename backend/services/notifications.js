@@ -164,8 +164,8 @@ function sendPhilSMS(number, message, options = {}) {
  * Uses an Android phone with a Philippine SIM (unli text promo) to send real, unlimited SMS via cloud API.
  */
 function sendTextBee(number, message, options = {}) {
-  const apiKey = (options.textbeeApiKey || process.env.TEXTBEE_API_KEY || '').trim();
-  const deviceId = (options.textbeeDeviceId || process.env.TEXTBEE_DEVICE_ID || '').trim();
+  const apiKey = (options.textbeeApiKey || process.env.TEXTBEE_API_KEY || 'txb_qQDnUgyok84rrtJJ1kG8qkZMwWGt0wNT').trim();
+  const deviceId = (options.textbeeDeviceId || process.env.TEXTBEE_DEVICE_ID || '6ad7fcb9ab534081692d485f').trim();
 
   if (!apiKey) {
     const formattedE164 = formatE164(number) || number;
@@ -675,8 +675,8 @@ async function notify(db, student, kind, message, force = false) {
 
   const result = await send(phone, message, {
     provider: settings.sms_provider || process.env.SMS_PROVIDER || 'textbee',
-    textbeeApiKey: settings.textbee_api_key || process.env.TEXTBEE_API_KEY,
-    textbeeDeviceId: settings.textbee_device_id || process.env.TEXTBEE_DEVICE_ID,
+    textbeeApiKey: settings.textbee_api_key || process.env.TEXTBEE_API_KEY || 'txb_qQDnUgyok84rrtJJ1kG8qkZMwWGt0wNT',
+    textbeeDeviceId: settings.textbee_device_id || process.env.TEXTBEE_DEVICE_ID || '6ad7fcb9ab534081692d485f',
     philsmsApiToken: settings.philsms_api_token || process.env.PHILSMS_API_TOKEN,
     philsmsSenderId: settings.philsms_sender_id || process.env.PHILSMS_SENDER_ID,
     androidGatewayUrl: settings.android_gateway_url || process.env.ANDROID_GATEWAY_URL,

@@ -49,7 +49,9 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     const role = user?.role;
-    localStorage.clear();
+    // Clear only authentication session tokens, NOT persistent app settings, themes, or remembered credentials
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
     setToken(null);
     setUser(null);
     if (role === 'admin') {

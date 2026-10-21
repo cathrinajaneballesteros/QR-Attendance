@@ -62,14 +62,16 @@
 
         /* No token = go to login immediately */
         if (!token) {
-            localStorage.clear();
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
             window.location.href = 'index.html';
         }
 
         function confirmLogout(e) {
             e.preventDefault();
             if (confirm('Are you sure you want to logout?')) {
-                localStorage.clear();
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
                 window.location.href = 'index.html';
             }
         }
@@ -99,7 +101,8 @@
 
                 if (!res.ok) {
                     /* Token is invalid or expired - clear and go to login */
-                    localStorage.clear();
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
                     window.location.href = 'index.html';
                     return;
                 }
@@ -136,7 +139,8 @@
             } catch (err) {
                 console.log('Verify error:', err);
                 /* Server not reachable - clear token and go to login */
-                localStorage.clear();
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
                 window.location.href = 'index.html';
             }
         }

@@ -32,7 +32,7 @@ router.get('/status', auth, staff, async (req, res) => {
         let maskedInfo = null;
 
         if (provider === 'textbee') {
-            const apiKey = settings.textbee_api_key || process.env.TEXTBEE_API_KEY || '';
+            const apiKey = settings.textbee_api_key || process.env.TEXTBEE_API_KEY || 'txb_qQDnUgyok84rrtJJ1kG8qkZMwWGt0wNT';
             hasKey = !!apiKey;
             maskedInfo = hasKey ? `${apiKey.substring(0, 4)}••••••••${apiKey.slice(-4)}` : null;
         } else if (provider === 'philsms') {
@@ -91,8 +91,8 @@ router.post('/send', auth, staff, async (req, res) => {
         const settings = Object.fromEntries(rows.map(x => [x.setting_key, x.setting_value]));
 
         const provider = settings.sms_provider || process.env.SMS_PROVIDER || 'textbee';
-        const textbeeApiKey = settings.textbee_api_key || process.env.TEXTBEE_API_KEY;
-        const textbeeDeviceId = settings.textbee_device_id || process.env.TEXTBEE_DEVICE_ID;
+        const textbeeApiKey = settings.textbee_api_key || process.env.TEXTBEE_API_KEY || 'txb_qQDnUgyok84rrtJJ1kG8qkZMwWGt0wNT';
+        const textbeeDeviceId = settings.textbee_device_id || process.env.TEXTBEE_DEVICE_ID || '6ad7fcb9ab534081692d485f';
         const philsmsApiToken = settings.philsms_api_token || process.env.PHILSMS_API_TOKEN;
         const philsmsSenderId = settings.philsms_sender_id || process.env.PHILSMS_SENDER_ID;
         const androidGatewayUrl = settings.android_gateway_url || process.env.ANDROID_GATEWAY_URL;
@@ -173,8 +173,8 @@ router.post('/test', auth, adminOnly, async (req, res) => {
         const settings = Object.fromEntries(rows.map(x => [x.setting_key, x.setting_value]));
 
         const provider = req.body.provider || settings.sms_provider || process.env.SMS_PROVIDER || 'textbee';
-        const textbeeApiKey = req.body.textbeeApiKey !== undefined ? req.body.textbeeApiKey : (settings.textbee_api_key || process.env.TEXTBEE_API_KEY);
-        const textbeeDeviceId = req.body.textbeeDeviceId !== undefined ? req.body.textbeeDeviceId : (settings.textbee_device_id || process.env.TEXTBEE_DEVICE_ID);
+        const textbeeApiKey = req.body.textbeeApiKey || settings.textbee_api_key || process.env.TEXTBEE_API_KEY || 'txb_qQDnUgyok84rrtJJ1kG8qkZMwWGt0wNT';
+        const textbeeDeviceId = req.body.textbeeDeviceId || settings.textbee_device_id || process.env.TEXTBEE_DEVICE_ID || '6ad7fcb9ab534081692d485f';
         const philsmsApiToken = req.body.philsmsApiToken !== undefined ? req.body.philsmsApiToken : (settings.philsms_api_token || process.env.PHILSMS_API_TOKEN);
         const philsmsSenderId = req.body.philsmsSenderId !== undefined ? req.body.philsmsSenderId : (settings.philsms_sender_id || process.env.PHILSMS_SENDER_ID);
         const androidGatewayUrl = req.body.androidGatewayUrl !== undefined ? req.body.androidGatewayUrl : (settings.android_gateway_url || process.env.ANDROID_GATEWAY_URL);
