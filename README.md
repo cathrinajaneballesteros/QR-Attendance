@@ -197,3 +197,5 @@ qr-attendance-system/
 - **Database Connection Error on Vercel:** Ensure your `DATABASE_URL` password in Vercel settings doesn't have unescaped special characters (e.g., `#`, `@`, `%`). If your password has special characters, URL-encode them or use letters and numbers for the password in Supabase.
 - **Can't Scan / Blocked Student:** Ensure the student is set to **Officially Enrolled** in the Students roster tab. Only enrolled students are permitted to record attendance.
 - **GPS Distance Warning:** If testing outside school, either switch attendance mode to **Flipped Classroom** in Settings or disable GPS verification.
+
+- 
