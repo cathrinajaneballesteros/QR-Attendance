@@ -362,6 +362,7 @@ export default function Students() {
       });
       const data = await res.json();
       if (res.ok) {
+        setStudents(prev => prev.map(s => s.id === student.id ? { ...s, has_face_profile: 0 } : s));
         showAlert(data.message || `Facial profile cleared for ${student.full_name}`);
         loadStudents();
       } else {
@@ -774,12 +775,13 @@ export default function Students() {
                             background: '#ECFDF5',
                             color: '#10B981',
                             border: '1px solid #A7F3D0',
-                            borderRadius: '12px'
+                            borderRadius: '12px',
+                            fontWeight: 600
                           }}
-                          title="Face biometric enrolled. Click to re-scan/update."
+                          title="Face biometric registered for this student. Click to re-scan or update."
                         >
                           <ShieldCheck size={12} strokeWidth={2} />
-                          <span>Enrolled</span>
+                          <span>Face Registered</span>
                         </button>
                         <button
                           type="button"
@@ -1354,6 +1356,10 @@ export default function Students() {
         onClose={() => setFaceModalStudent(null)}
         onSuccess={() => {
           showAlert(`Face profile enrolled successfully for ${faceModalStudent?.full_name}!`);
+          const enrolledId = faceModalStudent?.id;
+          if (enrolledId) {
+            setStudents(prev => prev.map(s => s.id === enrolledId ? { ...s, has_face_profile: 1 } : s));
+          }
           setFaceModalStudent(null);
           loadStudents();
         }}

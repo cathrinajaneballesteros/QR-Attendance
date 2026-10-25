@@ -163,7 +163,9 @@ export default function AttendanceScanner() {
           try {
             return {
               ...st,
-              descriptorArray: JSON.parse(st.face_descriptor)
+              descriptorArray: typeof st.face_descriptor === 'string'
+                ? JSON.parse(st.face_descriptor)
+                : st.face_descriptor
             };
           } catch (e) {
             return null;
@@ -172,6 +174,9 @@ export default function AttendanceScanner() {
         faceRosterRef.current = list;
         setFaceRosterCount(list.length);
         return list;
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        console.warn('Face roster load notice:', errData.error || res.statusText);
       }
     } catch (err) {
       console.warn('Face roster load notice:', err.message);
@@ -550,8 +555,13 @@ export default function AttendanceScanner() {
                   handleProcessFace(bestMatch, liveDesc);
                 }
               } else {
-                drawFaceBox(faceCanvasRef.current, video, box, 'Face Detected • Unrecognized', false);
-                setFaceStatusText('Face detected • Aligning with roster...');
+                if (!roster || roster.length === 0) {
+                  drawFaceBox(faceCanvasRef.current, video, box, 'No Faces Enrolled In Roster', false);
+                  setFaceStatusText('Face detected • No face profiles registered in roster (0 enrolled)');
+                } else {
+                  drawFaceBox(faceCanvasRef.current, video, box, 'Face Detected • Unrecognized', false);
+                  setFaceStatusText(`Face detected • Not recognized in class roster (${roster.length} enrolled)`);
+                }
               }
             } else {
               if (faceCanvasRef.current) {
@@ -831,7 +841,7 @@ export default function AttendanceScanner() {
           {/* Active Mode Notice Banner (For Face and QR modes) */}
           {verificationMode !== 'both' && (
             <div style={{
-              fontSize: '0.76rem',
+              fontSize: '0.78rem',
               color: 'var(--text-muted)',
               marginBottom: '14px',
               textAlign: 'center',
@@ -842,9 +852,34 @@ export default function AttendanceScanner() {
             }}>
               <Sparkles size={14} style={{ color: verificationMode === 'face' ? '#0284c7' : '#059669' }} />
               <span>
-                {verificationMode === 'face' && `Contactless Mode: Stand in front of camera (${faceRosterCount} student face profiles loaded).`}
+                {verificationMode === 'face' && (
+                  faceRosterCount > 0
+                    ? `Contactless Mode: Stand in front of camera (${faceRosterCount} student face profiles loaded).`
+                    : `⚠️ Notice: 0 student face profiles enrolled in this roster. Please enroll student faces in Students page first.`
+                )}
                 {verificationMode === 'qr' && 'Fast Scan Mode: Only student QR code is required. Face verification is off.'}
               </span>
+            </div>
+          )}
+
+          {/* Warning Banner if Face Recognition Mode has 0 enrolled students */}
+          {verificationMode === 'face' && faceRosterCount === 0 && (
+            <div style={{
+              background: '#FFFBEB',
+              border: '1px solid #FDE68A',
+              color: '#B45309',
+              padding: '10px 14px',
+              borderRadius: '10px',
+              fontSize: '0.82rem',
+              marginBottom: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <AlertCircle size={18} style={{ color: '#D97706', flexShrink: 0 }} />
+              <div>
+                <strong>No Enrolled Faces in this Roster:</strong> Attendance cannot recognize any faces because 0 students have a registered face biometric profile. Go to <strong>Students</strong> &rarr; click <strong>"Register Face"</strong> for learners to enable face check-in.
+              </div>
             </div>
           )}
 

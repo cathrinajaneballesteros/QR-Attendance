@@ -484,7 +484,16 @@ function wrapPgDatabase(pool) {
       return {
         async get(...args) {
           if (/PRAGMA\s+table_info/i.test(sql)) {
-            return [{ name: 'student_phone' }, { name: 'email' }, { name: 'is_enrolled' }, { name: 'enrollment_status' }, { name: 'room' }];
+            return [
+              { name: 'student_phone' },
+              { name: 'email' },
+              { name: 'is_enrolled' },
+              { name: 'enrollment_status' },
+              { name: 'room' },
+              { name: 'teacher_id' },
+              { name: 'face_descriptor' },
+              { name: 'face_verified' }
+            ];
           }
           try {
             const params = args.flat();
@@ -499,7 +508,16 @@ function wrapPgDatabase(pool) {
 
         async all(...args) {
           if (/PRAGMA\s+table_info/i.test(sql)) {
-            return [{ name: 'student_phone' }, { name: 'email' }, { name: 'is_enrolled' }, { name: 'enrollment_status' }, { name: 'room' }];
+            return [
+              { name: 'student_phone' },
+              { name: 'email' },
+              { name: 'is_enrolled' },
+              { name: 'enrollment_status' },
+              { name: 'room' },
+              { name: 'teacher_id' },
+              { name: 'face_descriptor' },
+              { name: 'face_verified' }
+            ];
           }
           try {
             const params = args.flat();
@@ -525,7 +543,7 @@ function wrapPgDatabase(pool) {
             return { lastInsertRowid, rowCount: res.rowCount };
           } catch (err) {
             console.error('Supabase/PostgreSQL run error:', err.message, 'SQL:', sql);
-            return { lastInsertRowid: 0, error: err.message };
+            throw err;
           }
         }
       };
@@ -583,9 +601,15 @@ async function initPgDatabase(connectionString) {
       is_enrolled INTEGER DEFAULT 1,
       enrollment_status TEXT DEFAULT 'officially_enrolled',
       teacher_id INTEGER,
+      face_descriptor TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
     ALTER TABLE students ADD COLUMN IF NOT EXISTS teacher_id INTEGER;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS face_descriptor TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS student_phone TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS email TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS is_enrolled INTEGER DEFAULT 1;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS enrollment_status TEXT DEFAULT 'officially_enrolled';
     UPDATE students SET teacher_id = (SELECT id FROM users WHERE role = 'teacher' ORDER BY id LIMIT 1) WHERE teacher_id IS NULL;
     CREATE TABLE IF NOT EXISTS attendance (
       id SERIAL PRIMARY KEY,
@@ -597,8 +621,13 @@ async function initPgDatabase(connectionString) {
       latitude DOUBLE PRECISION,
       longitude DOUBLE PRECISION,
       room TEXT DEFAULT 'Room 101 - Grade 6 Great Geniuses',
+      face_verified INTEGER DEFAULT 0,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+    ALTER TABLE attendance ADD COLUMN IF NOT EXISTS face_verified INTEGER DEFAULT 0;
+    ALTER TABLE attendance ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
+    ALTER TABLE attendance ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
+    ALTER TABLE attendance ADD COLUMN IF NOT EXISTS room TEXT DEFAULT 'Room 101 - Grade 6 Great Geniuses';
     CREATE TABLE IF NOT EXISTS sms_logs (
       id SERIAL PRIMARY KEY,
       student_id INTEGER,

@@ -286,6 +286,9 @@ router.post('/scan', auth, staff, async (req, res) => {
 router.get('/face-roster', auth, staff, async (req, res) => {
   try {
     const db = req.app.get('db');
+    if (db.isPostgres) {
+      await db.exec('ALTER TABLE students ADD COLUMN IF NOT EXISTS face_descriptor TEXT');
+    }
     let sql = "SELECT id, full_name, lrn, sex, face_descriptor FROM students WHERE is_enrolled = 1 AND enrollment_status = 'officially_enrolled' AND face_descriptor IS NOT NULL AND face_descriptor != ''";
     const params = [];
     if (req.user.role === 'teacher') {
@@ -305,6 +308,9 @@ router.get('/face-roster', auth, staff, async (req, res) => {
 router.post('/face-scan', auth, staff, async (req, res) => {
   try {
     const db = req.app.get('db');
+    if (db.isPostgres) {
+      await db.exec('ALTER TABLE attendance ADD COLUMN IF NOT EXISTS face_verified INTEGER DEFAULT 0');
+    }
     const policy = await checkPolicy(db, req.body, true);
     if (policy) return res.status(403).json({ error: policy });
 

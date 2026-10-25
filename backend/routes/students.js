@@ -20,8 +20,19 @@ function staff(req, res, next) {
 }
 
 async function ensureStudentColumns(db) {
-    if (db.isPostgres) return; // PostgreSQL schema handled via migrations
     try {
+        if (db.isPostgres) {
+            await db.exec(`
+                ALTER TABLE students ADD COLUMN IF NOT EXISTS face_descriptor TEXT;
+                ALTER TABLE students ADD COLUMN IF NOT EXISTS teacher_id INTEGER;
+                ALTER TABLE students ADD COLUMN IF NOT EXISTS student_phone TEXT;
+                ALTER TABLE students ADD COLUMN IF NOT EXISTS email TEXT;
+                ALTER TABLE students ADD COLUMN IF NOT EXISTS is_enrolled INTEGER DEFAULT 1;
+                ALTER TABLE students ADD COLUMN IF NOT EXISTS enrollment_status TEXT DEFAULT 'officially_enrolled';
+            `);
+            return;
+        }
+
         const columns = (await db.prepare('PRAGMA table_info(students)').all() || [])
             .map(function (column) {
                 return column.name;
@@ -49,7 +60,9 @@ async function ensureStudentColumns(db) {
         await db.exec("UPDATE students SET is_enrolled = 1 WHERE is_enrolled IS NULL OR is_enrolled = ''");
         await db.exec("UPDATE students SET enrollment_status = 'officially_enrolled' WHERE enrollment_status IS NULL OR enrollment_status = ''");
         await db.exec("UPDATE students SET teacher_id = (SELECT id FROM users WHERE role = 'teacher' ORDER BY id LIMIT 1) WHERE teacher_id IS NULL OR teacher_id = 0");
-    } catch (e) {}
+    } catch (e) {
+        console.warn('ensureStudentColumns notice:', e.message);
+    }
 }
 
 // Get students: Each teacher sees their OWN students; Admin can view all or filter by teacher_id
@@ -75,11 +88,12 @@ router.get('/', auth, staff, async function (req, res) {
 
         const students = (rows || []).map(s => {
             const isBlocked = s.is_enrolled === 0 || s.is_enrolled === '0' || s.enrollment_status === 'not_enrolled' || s.enrollment_status === 'dropped';
+            const hasFace = !!(s.face_descriptor && typeof s.face_descriptor === 'string' && s.face_descriptor.trim().length > 10 && s.face_descriptor !== 'null');
             return {
                 ...s,
                 is_enrolled: isBlocked ? 0 : 1,
                 enrollment_status: isBlocked ? (s.enrollment_status || 'not_enrolled') : 'officially_enrolled',
-                has_face_profile: s.face_descriptor ? 1 : 0,
+                has_face_profile: hasFace ? 1 : 0,
                 face_descriptor: undefined // strip raw descriptor from list response for performance
             };
         });
@@ -503,6 +517,7 @@ router.delete('/:id', auth, staff, async function (req, res) {
 router.post('/:id/face', auth, staff, async function (req, res) {
     try {
         const db = req.app.get('db');
+        await ensureStudentColumns(db);
         const studentId = req.params.id;
 
         const student = await db.prepare('SELECT * FROM students WHERE id = ?').get(studentId);
@@ -545,6 +560,7 @@ router.post('/:id/face', auth, staff, async function (req, res) {
 router.delete('/:id/face', auth, staff, async function (req, res) {
     try {
         const db = req.app.get('db');
+        await ensureStudentColumns(db);
         const studentId = req.params.id;
 
         const student = await db.prepare('SELECT * FROM students WHERE id = ?').get(studentId);
