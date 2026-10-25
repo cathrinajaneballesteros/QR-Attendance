@@ -536,12 +536,24 @@ function wrapPgDatabase(pool) {
             const params = args.flat();
             let pgSql = toPgSql(sql);
             const isInsert = /^\s*INSERT\s+INTO/i.test(pgSql);
-            if (isInsert && !/RETURNING/i.test(pgSql)) {
+            const hasNoId = /INSERT\s+INTO\s+["']?(app_settings|notification_events|student_absence_days)["']?\b/i.test(pgSql);
+            let appendedReturning = false;
+            if (isInsert && !hasNoId && !/RETURNING/i.test(pgSql)) {
               pgSql += ' RETURNING id';
+              appendedReturning = true;
             }
-            const res = await pool.query(pgSql, params);
-            const lastInsertRowid = res.rows && res.rows[0] && res.rows[0].id ? res.rows[0].id : 0;
-            return { lastInsertRowid, rowCount: res.rowCount };
+            try {
+              const res = await pool.query(pgSql, params);
+              const lastInsertRowid = res.rows && res.rows[0] && res.rows[0].id ? res.rows[0].id : 0;
+              return { lastInsertRowid, rowCount: res.rowCount };
+            } catch (queryErr) {
+              if (appendedReturning && /column ["']?id["']? does not exist/i.test(queryErr.message)) {
+                const cleanedSql = pgSql.replace(/\s+RETURNING\s+id$/i, '');
+                const fallbackRes = await pool.query(cleanedSql, params);
+                return { lastInsertRowid: 0, rowCount: fallbackRes.rowCount };
+              }
+              throw queryErr;
+            }
           } catch (err) {
             console.error('Supabase/PostgreSQL run error:', err.message, 'SQL:', sql);
             throw err;
