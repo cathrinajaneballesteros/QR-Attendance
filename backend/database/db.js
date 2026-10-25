@@ -260,6 +260,7 @@ async function initSqliteDatabase() {
     absence_threshold: '5',
     late_after: '08:00',
     sms_enabled: '0',
+    sms_notify_present: '1',
     sms_provider: 'textbee',
     textbee_api_key: 'txb_qQDnUgyok84rrtJJ1kG8qkZMwWGt0wNT',
     textbee_device_id: '6ad7fcb9ab534081692d485f',
@@ -688,6 +689,7 @@ async function initPgDatabase(connectionString) {
     ['absence_threshold', '5'],
     ['late_after', '08:00'],
     ['sms_enabled', '0'],
+    ['sms_notify_present', '1'],
     ['sms_provider', 'textbee'],
     ['textbee_api_key', 'txb_qQDnUgyok84rrtJJ1kG8qkZMwWGt0wNT'],
     ['textbee_device_id', '6ad7fcb9ab534081692d485f']

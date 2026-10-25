@@ -148,12 +148,15 @@ async function record(db, student, who, location, faceVerified = 0) {
     faceVerified
   );
 
-  if (status === 'late') {
-    try {
+  try {
+    const notifyPresent = settings.sms_notify_present !== '0';
+    if (status === 'late') {
       await notify(db, student, 'late', `Attendance notice: ${student.full_name} arrived late at ${now.display} on ${now.date} (${room}).`);
-    } catch (ne) {
-      console.warn('Late notification notice:', ne.message);
+    } else if (status === 'present' && notifyPresent) {
+      await notify(db, student, 'present', `Attendance notice: ${student.full_name} has arrived at school and checked in at ${now.display} on ${now.date} (${room}).`);
     }
+  } catch (ne) {
+    console.warn('Attendance notification notice:', ne.message);
   }
 
   try {

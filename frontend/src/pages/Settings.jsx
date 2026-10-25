@@ -93,6 +93,7 @@ export default function Settings() {
       qr_start: '',
       qr_end: '',
       sms_enabled: '0',
+      sms_notify_present: '1',
       sms_provider: 'textbee',
       textbee_api_key: HARDCODED_TEXTBEE_API_KEY,
       textbee_device_id: HARDCODED_TEXTBEE_DEVICE_ID,
@@ -1108,7 +1109,7 @@ export default function Settings() {
               <div>
                 <div className="settings-option-title">Automated Parent SMS Alerts</div>
                 <div className="settings-option-desc">
-                  Automatically dispatches SMS notifications to the guardian's contact number when a student is recorded Late, Absent, or reaches 5 consecutive absences (SARDO alert).
+                  Automatically dispatches SMS notifications to the guardian's contact number when a student is recorded Present, Late, Absent, or reaches 5 consecutive absences (SARDO alert).
                 </div>
               </div>
             </div>

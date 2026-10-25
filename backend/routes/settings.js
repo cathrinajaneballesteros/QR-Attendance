@@ -25,6 +25,7 @@ const defaults = {
     absence_threshold: '5',
     late_after: '08:00',
     sms_enabled: '0',
+    sms_notify_present: '1',
     sms_provider: 'textbee',
     textbee_api_key: HARDCODED_TEXTBEE_API_KEY,
     textbee_device_id: HARDCODED_TEXTBEE_DEVICE_ID,
@@ -111,6 +112,7 @@ router.put('/', auth, async function (req, res) {
         const adminOnlyKeys = [
             'sms_provider',
             'sms_enabled',
+            'sms_notify_present',
             'textbee_api_key',
             'textbee_device_id',
             'philsms_api_token',
